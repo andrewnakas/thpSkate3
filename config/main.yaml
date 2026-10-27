@@ -1,0 +1,40 @@
+name: Tony Hawk's Pro Skater (N64, US V1.1) main segment
+sha1: 7725fd5d2420769446ef81e207fddd398948781f
+options:
+  basename: thps
+  target_path: work/main.bin
+  base_path: ..
+  platform: n64
+  compiler: GCC
+  find_file_boundaries: True
+  asm_path: asm
+  src_path: src
+  build_path: build
+  ld_script_path: build/thps.ld
+  symbol_addrs_path: config/symbol_addrs.txt
+  undefined_funcs_auto_path: config/undefined_funcs_auto.txt
+  undefined_syms_auto_path: config/undefined_syms_auto.txt
+  create_undefined_funcs_auto: True
+  create_undefined_syms_auto: True
+  o_as_suffix: True
+  use_legacy_include_asm: False
+  mips_abi_float_regs: numeric
+  asm_function_macro: glabel
+  generate_asm_macros_files: False   # include/macro.inc is ours (no .aent: LLVM rejects it)
+  asm_jtbl_label_macro: jlabel
+  asm_data_macro: dlabel
+  section_order: [".rodata", ".text", ".data", ".bss"]
+  string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  gp_value: 0x0
+segments:
+  - name: main
+    type: code
+    start: 0x0
+    vram: 0x80016AC0
+    bss_size: 0x6465
+    subsegments:
+      - [0x0, rodata]
+      - [0xB900, c, game]
+      - [0xAA360, data]
+  - [0xDF9A0]

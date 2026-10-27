@@ -1,0 +1,30 @@
+name: THPS N64 boot segment (libultra + loader)
+sha1: 8fe1abbab1cc8a15ba6b7cf1e45714c241d19316
+options:
+  basename: thps_boot
+  target_path: work/boot.bin
+  base_path: ..
+  platform: n64
+  compiler: IDO
+  asm_path: asm_boot
+  src_path: src_boot
+  build_path: build
+  ld_script_path: build/thps_boot.ld
+  symbol_addrs_path: [config/boot_symbols.txt, config/n64sym_boot.txt]
+  undefined_funcs_auto_path: build/boot_undefined_funcs_auto.txt
+  undefined_syms_auto_path: build/boot_undefined_syms_auto.txt
+  asm_function_macro: glabel
+  generate_asm_macros_files: False   # include/macro.inc is ours (no .aent: LLVM rejects it)
+  asm_data_macro: dlabel
+  gp_value: 0x0
+segments:
+  - name: boot
+    type: code
+    start: 0x0
+    vram: 0x80000400
+    subsegments:
+      - [0x0, asm]
+      - [0x840, asm, loader_erz]      # hand-written ERZ (RNC) unpacker, jumps between its own blocks
+      - [0xF30, asm, libultra]
+      - [0x11810, data]
+  - [0x12A10]

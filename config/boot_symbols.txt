@@ -1,0 +1,4 @@
+// libultra in boot, named by tools/ultralib_scan.py (ultralib 2.0I via IDO 5.3; masked byte match, unique hits only)
+// hand-identified from the call graph (tools: see STATUS.md "libultra"), older libultra than ultralib reproduces
+// VI and interrupt helpers (all read __osViNext 0x80011CF4 / __osViCurr 0x80011CF0, which the runtime's VI replaces)
+// hardware-register users the game calls (MI / AI)

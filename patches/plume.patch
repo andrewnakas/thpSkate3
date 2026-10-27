@@ -1,0 +1,30 @@
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f1dd503..03b027d 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -3208,7 +3208,24 @@ namespace plume {
+         const VulkanTexture *srcTexture = static_cast<const VulkanTexture *>(srcLocation.texture);
+         const VulkanBuffer *dstBuffer = static_cast<const VulkanBuffer *>(dstLocation.buffer);
+         const VulkanBuffer *srcBuffer = static_cast<const VulkanBuffer *>(srcLocation.buffer);
+-        if ((dstLocation.type == RenderTextureCopyType::SUBRESOURCE) && (srcLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT)) {
++        if ((dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
++            // thpSkate3: texture -> buffer readback (frame capture).
++            assert(srcTexture != nullptr);
++            assert(dstBuffer != nullptr);
++            VkBufferImageCopy imageCopy = {};
++            imageCopy.bufferOffset = dstLocation.placedFootprint.offset;
++            imageCopy.bufferRowLength = dstLocation.placedFootprint.rowWidth;
++            imageCopy.bufferImageHeight = dstLocation.placedFootprint.height;
++            imageCopy.imageSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);
++            imageCopy.imageSubresource.baseArrayLayer = srcLocation.subresource.arrayIndex;
++            imageCopy.imageSubresource.layerCount = 1;
++            imageCopy.imageSubresource.mipLevel = srcLocation.subresource.mipLevel;
++            imageCopy.imageExtent.width = dstLocation.placedFootprint.width;
++            imageCopy.imageExtent.height = dstLocation.placedFootprint.height;
++            imageCopy.imageExtent.depth = dstLocation.placedFootprint.depth;
++            vkCmdCopyImageToBuffer(vk, srcTexture->vk, toImageLayout(srcTexture->textureLayout), dstBuffer->vk, 1, &imageCopy);
++        }
++        else if ((dstLocation.type == RenderTextureCopyType::SUBRESOURCE) && (srcLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT)) {
+             assert(dstTexture != nullptr);
+             assert(srcBuffer != nullptr);
+ 

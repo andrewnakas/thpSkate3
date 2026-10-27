@@ -1,0 +1,28 @@
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+index 850689d..fa6e0e7 100644
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -405,8 +405,21 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+         }
+     }
+ 
+-    write_file(config_path / game_entry.stored_filename(), rom_data);
+-    
++    // thpSkate3: several instances may start at once (another one could be reading the stored ROM), so leave an
++    // identical stored copy alone and otherwise replace it atomically instead of truncating it in place.
++    const std::filesystem::path stored_path = config_path / game_entry.stored_filename();
++    if (read_file(stored_path) != rom_data) {
++        std::filesystem::path tmp_path = stored_path;
++        tmp_path += ".tmp" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
++        if (write_file(tmp_path, rom_data)) {
++            std::error_code ec;
++            std::filesystem::rename(tmp_path, stored_path, ec);
++            if (ec) {
++                std::filesystem::remove(tmp_path, ec);
++            }
++        }
++    }
++
+     return recomp::RomValidationError::Good;
+ }
+ 

@@ -1,0 +1,38 @@
+# N64Recomp config for THPS (N64, US V1.1): symbol-file mode over work/recomp.z64
+# (tools/recomp_syms.py writes both inputs). Paths are relative to this file.
+[input]
+entrypoint = 0x80000400
+symbols_file_path = "thps.syms.toml"
+rom_file_path = "../work/recomp.z64"
+output_func_path = "RecompiledFuncs"
+functions_per_output_file = 50
+# every function records its entry (recomp/include/trace.h): cheap, and what finds stalls
+trace_mode = true
+# the generated code calls libultra functions the runtime reimplements as <name>_recomp
+recomp_include = """#include "recomp.h"
+#include "reimplemented_decls.h"
+#include "skate_hooks.h""""
+
+[patches]
+# boot's ERZ unpacker (hand-written asm): the recomp runs main from the unpacked image, so it is never needed
+stubs = ["func_80097D34", "func_800998CC", "func_8009AC5C"]
+# boot main: replaced by port/src/boot.cpp (unpacks main from the ROM in C++, then enters 0x800C0480)
+ignored = ["func_80000870", "thps_osSetEventMesg", "thps_osPiRawStartDma", "thps_osRecvMesg", "thps_osSendMesg", "thps_osAiGetStatus", "thps___osContRamWrite", "thps___osContRamRead", "thps___osPfsGetStatus", "thps_osPfsIsPlug"]
+
+# thpSkate3: skatecore drives the skater and the camera (port/src/skate_bridge.cpp)
+[[patches.hook]]
+func = "func_80059BEC"
+text = "if (thps_skate_physics(rdram, ctx)) return;"
+
+[[patches.hook]]
+func = "func_80073EA0"
+text = "if (thps_skate_camera(rdram, ctx)) return;"
+
+[[patches.hook]]
+func = "func_80084CB8"
+text = "thps_skate_pose_begin(rdram, ctx);"
+
+[[patches.hook]]
+func = "func_80084CB8"
+before_vram = 0x80084DB4
+text = "thps_skate_pose_end(rdram, ctx);"

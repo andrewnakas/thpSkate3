@@ -1,0 +1,12 @@
+// Linker-only aliases: names that compiled C calls for code that splat already names func_XXXXXXXX in main.
+// Read only by tools/build.py (never by find_funcs/splat, so the split is unchanged). One `name = 0xADDR;` per line.
+// GCC's 64-bit runtime (libgcc) as linked into main, found by pairing func_800BCDEC's jal targets with the
+// compiler's relocations for the same C, in order:
+__udivdi3 = 0x800C0770;
+__cmpdi2 = 0x800C0D00;
+__floatdisf = 0x800C0D50;
+// second name for 0x80000870 (below main): func_800C03CC passes it as two separate symbols, which the game's
+// compiler kept apart (two lui/addiu); linker-only so splat/asm keep using D_80000870
+D_80000870_end = 0x80000870;
+// libultra name for 0x80098970 (n64sym): func_800BE5A4 references both D_80098970 and this name
+gspF3DEX2_NoN_fifoTextStart = 0x80098970;

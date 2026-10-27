@@ -1,0 +1,19 @@
+# RSPRecomp config for THPS's audio microcode (an older aspMain build than Pilotwings 64's: only 3/904 words agree).
+#
+# From the game's audio OSTask: ucode 0x80097C40 (text runs to rspboot at 0x800988A0, 0xC60 bytes), ucode_data
+# 0x800E95E0. work/recomp.z64 holds main uncompressed at ROM 0xC00000, so the text is at 0xC81180.
+# text_address 0x04001080: rspboot occupies the first 0x80 bytes of IMEM and loads the task microcode after itself.
+# The command handlers come from the 16-entry halfword table at the start of the data (0x0000 and 0x02B0 are
+# unused slot; 0x02B0 is command 0xE at IMEM 0x12B0, the 12-bit address without the 0x1000 bit), which RSPRecomp cannot discover by walking instructions.
+rom_file_path = "../work/recomp.z64"
+text_offset = 0xC81180
+text_size = 0xC60
+text_address = 0x04001080
+
+output_file_path = "RecompiledFuncs/aspMain_rsp.cpp"
+output_function_name = "aspMain_run"
+
+extra_indirect_branch_targets = [
+    0x10EC, 0x139C, 0x119C, 0x1A64, 0x11C8, 0x17EC, 0x1208,
+    0x127C, 0x1348, 0x1248, 0x1C84, 0x12D4, 0x1384, 0x12B0,
+]

@@ -1,0 +1,18 @@
+# Nothing from either game is committed: ROM-derived, generated and downloaded files stay local.
+deps/
+data/
+work/
+asm
+port/build/
+port/*.log
+port/*.err
+recomp/RecompiledFuncs/
+recomp/cop2_sites.txt.bak
+__pycache__/
+*.pyc
+port/*.out
+# Windows-only dev helpers with machine paths
+port/build.cmd
+port/run.ps1
+port/capture_window.ps1
+port/capture_wgc.py
