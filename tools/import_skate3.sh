@@ -38,4 +38,5 @@ PY
 )
 mkdir -p "$ROOT/data/cleanpack"
 python3 "$ROOT/tools/s3_import.py" make "$WORK/stage/assets" "$ROOT/data/cleanpack/core.pack"
+python3 "$ROOT/tools/s3_import.py" names "$ISO" "$ROOT/data/cleanpack/trick-names.tsv"
 echo "== done: data/cleanpack/core.pack (the converter's working files in $WORK can be deleted)"

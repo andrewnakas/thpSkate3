@@ -57,7 +57,8 @@ python3 -c "import sys; sys.path.insert(0,'tools'); import thps_skel as s; s.exp
 
 # Skate 3 data from your own Xbox 360 Skate 3 disc image (about a minute; needs uv for numpy/Pillow and ~1.5 GB
 # of scratch space). Writes data/cleanpack/core.pack: animation banks, state graphs, physics tables and the skater
-# model, converted by skate-3-rust-engine's asset pipeline (fetched at a pinned revision). Never commit it.
+# model, converted by skate-3-rust-engine's asset pipeline (fetched at a pinned revision), and
+# data/cleanpack/trick-names.tsv, Skate 3's English trick names for the HUD. Never commit either.
 tools/import_skate3.sh "/path/to/Skate 3.iso" [SCRATCH_DIR]
 
 # build and run
@@ -75,6 +76,12 @@ back to their decomp sizes (the camera FOV setup and parts of the music library;
 
 Skating is Skate 3's: left stick steers/leans, A pushes, the right stick flicks tricks (down then up = ollie),
 triggers grab, Y gets off the board. Start opens THPS's pause menu.
+
+Scoring is THPS's: every Skate 3 trick (flips, grabs, body flips, grinds, manuals, plants) shows under its Skate 3
+name and joins the combo; chain them -- land into a manual, manual into the next trick, air into a grind -- and the
+combo's total is multiplied by the number of tricks when you roll away. A bail loses it. Grinds and manuals pay more
+the longer you hold them, each 180 of spin and every frontflip or backflip add to a trick, and repeating a trick in
+one combo is worth less each time.
 
 Session markers, as in Skate 3: **LB + d-pad down** sets a session marker, **LB + d-pad up** goes back to it, **LB +
 d-pad left/right** switches between the trainer's five marker slots (the selected slot is the session marker). The

@@ -29,6 +29,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <cctype>
+#include <sstream>
+#include <map>
 #include <fstream>
 #include <iterator>
 #include <future>
@@ -490,34 +493,6 @@ uint32_t game_string(uint8_t* rdram, const std::string& text) {
     return a;
 }
 
-// skatecore trick ids ("VARIALKICKFLIP", "N_HEELFLIP_UNDERFLIP") as THPS-style names ("NOLLIE HEELFLIP UNDERFLIP").
-std::string display_name(const std::string& id) {
-    static const char* const prefixes[][2] = {{"N_", "NOLLIE "}, {"F_", "FAKIE "}, {"S_", "SWITCH "}};
-    static const char* const words[] = {"VARIAL", "KICKFLIP", "HEELFLIP", "HARDFLIP", "INWARD", "UNDERFLIP",
-                                        "IMPOSSIBLE", "LASER", "SHOVIT", "SHUVIT", "POP", "DOUBLE", "TRIPLE",
-                                        "OLLIE", "NOLLIE", "FINGERFLIP", "DARKSLIDE", "CASPER", "PRIMO", "TRE",
-                                        "BIGSPIN", "BODY", "VARIAL", "360", "540", "180", "FLIP", "FRONTSIDE",
-                                        "BACKSIDE", "GRAB", "MANUAL", "NOSE"};
-    std::string rest = id, out;
-    for (const auto& pf : prefixes)
-        if (rest.rfind(pf[0], 0) == 0) { out = pf[1]; rest = rest.substr(2); break; }
-    std::string word;
-    for (size_t i = 0; i < rest.size();) {
-        if (rest[i] == '_' || rest[i] == ' ') { out += ' '; i++; continue; }
-        size_t best = 0;
-        for (const char* w : words) {
-            const size_t n = std::strlen(w);
-            if (n > best && rest.compare(i, n, w) == 0) best = n;
-        }
-        if (best == 0) { out += rest[i]; i++; continue; }
-        if (!out.empty() && out.back() != ' ') out += ' ';
-        out += rest.substr(i, best);
-        i += best;
-        if (i < rest.size() && rest[i] != '_') out += ' ';
-    }
-    while (!out.empty() && out.back() == ' ') out.pop_back();
-    return out;
-}
 
 // THPS-scale points for a Skate 3 trick (THPS: kickflip 100, hardflip 300, grabs 200-ish, grinds 150).
 int trick_points(const std::string& id) {
@@ -579,58 +554,221 @@ void run_triggers(Bridge& b, uint8_t* rdram, const recomp_context* ctx, const Ve
     b.have_prev = true;
 }
 
+// ---------------------------------------------------------- THPS-style combos ----
+// Skate 3 names what the skater is doing as it happens (TickRecord::score_name, e.g.
+// "#ID_TRICK_GRAB_INDY 540 ID_TRICK_AIR_METRICS_BACKFLIP" or "#GRIND_FS_FEEBLE"). The bridge splits a run into
+// segments -- an air, a grind, a manual, a hand or foot plant -- and adds each finished segment to THPS's combo
+// (func_8004CACC) under its Skate 3 name, so THPS's own combo code counts the tricks, multiplies the total by
+// that count and banks it. Like THPS, a combo carries on while one segment leads into the next (land into a
+// manual, manual into an ollie, air into a grind...) and banks once the skater just rolls (after a short grace
+// for Skate 3's landing frames); a bail loses it.
+// English names come from the disc's language table (data/cleanpack/trick-names.tsv, written by
+// tools/import_skate3.sh); without it the ids are tidied up instead.
 struct ComboState {
-    bool airborne = false;
-    float air_yaw = 0.0f;      // accumulated deck yaw while airborne, radians
-    float last_yaw = 0.0f;
+    enum class Seg { None, Air, Grind, Manual, Plant };
+    Seg seg = Seg::None;
+    std::string name;            // the segment's Skate 3 score name
+    int ticks = 0;               // ticks spent in the segment
+    int rolling = 0;             // ticks of plain rolling since the last segment ended
+    bool in_combo = false;
+    std::string announced;       // the last score name Skate 3 showed (it stays up after a trick ends)
+    std::string pending;         // a name announced for a grind/manual/plant just before its state starts
+    int pending_age = 1000;
+    int gap = 0;                 // ticks the segment's state has been missing (it flickers mid-grind)
+    int entry = -1;              // this segment's slot in THPS's combo list, once added
+    float ratio = 1.0f;          // THPS's stored points / ours (repeat decay, the x10 mode)
+    std::string shown;           // name and points last written to the slot
+    int shown_points = -1;
 };
+
+const std::map<std::string, std::string>& trick_names(const Bridge& b) {
+    static std::map<std::string, std::string> names;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::ifstream f(b.pack_path.parent_path() / "trick-names.tsv");
+        for (std::string line; std::getline(f, line);) {
+            const size_t tab = line.find('\t');
+            if (tab != std::string::npos) names[line.substr(0, tab)] = line.substr(tab + 1);
+        }
+        std::fprintf(stderr, "[skate] %zu Skate 3 trick names\n", names.size());
+    }
+    return names;
+}
+
+// "#ID_TRICK_GRAB_INDY 540 ID_TRICK_AIR_METRICS_BACKFLIP" -> "INDY 540 BACKFLIP" (THPS's HUD font is upper case).
+std::string skate3_name(const Bridge& b, const std::string& score_name) {
+    const auto& names = trick_names(b);
+    std::string out, token;
+    std::istringstream in(score_name.size() && score_name[0] == '#' ? score_name.substr(1) : score_name);
+    while (in >> token) {
+        std::string text;
+        if (auto it = names.find(token); it != names.end()) text = it->second;
+        else if (auto it2 = names.find("ID_TRICK_" + token); it2 != names.end()) text = it2->second;
+        else {
+            std::string t = token.rfind("ID_TRICK_", 0) == 0 ? token.substr(9) : token;
+            for (const char* pre : {"GRIND_", "GROUND_TRICK_", "FLIP_", "GRAB_", "AIR_METRICS_", "AIR_"})
+                if (t.rfind(pre, 0) == 0) { t = t.substr(std::strlen(pre)); break; }
+            for (size_t i = 0; i + 2 < t.size(); i++)  // 5_0 -> 5-0, 50_50 -> 50-50
+                if (t[i + 1] == '_' && std::isdigit(uint8_t(t[i])) && std::isdigit(uint8_t(t[i + 2]))) t[i + 1] = '-';
+            for (char& c : t) if (c == '_') c = ' ';
+            text = t;
+        }
+        if (!out.empty()) out += ' ';
+        out += text;
+    }
+    for (char& c : out) c = char(std::toupper(uint8_t(c)));
+    return out;
+}
+
+// THPS-scale points for a finished segment (THPS: ollie 50, kickflip 100, hardflip 300, grinds ~150 plus time).
+int segment_points(ComboState::Seg seg, const std::string& score_name, int ticks) {
+    const float secs = float(ticks) / 60.0f;
+    auto has = [&](const char* w) { return score_name.find(w) != std::string::npos; };
+    int p = 0;
+    switch (seg) {
+    case ComboState::Seg::Grind: p = 150 + int(300.0f * secs); break;
+    case ComboState::Seg::Manual: p = 100 + int(200.0f * secs); break;
+    case ComboState::Seg::Plant: p = 250; break;
+    default: {
+        // the base trick, then the spin (each 180 degrees) and body flips on top
+        std::string base = score_name.substr(0, score_name.find(' '));
+        if (base.size() && base[0] == '#') base = base.substr(1);
+        p = (base == "ID_TRICK_AIR" || has("FLIP_OLLIE") || has("FLIP_NOLLIE")) ? 50 : trick_points(base);
+        if (has("GRAB")) p += 100 + int(100.0f * secs);
+        std::istringstream in(score_name);
+        for (std::string t; in >> t;)
+            if (!t.empty() && std::all_of(t.begin(), t.end(), [](char c) { return std::isdigit(uint8_t(c)); }))
+                p += std::atoi(t.c_str()) / 180 * 100;
+        if (has("FRONTFLIP") || has("BACKFLIP")) p += 500;
+        if (has("DARKCATCH")) p += 200;
+        break;
+    }
+    }
+    return p;
+}
+
+// THPS's combo list (THPS64 decomp, func_800460B8 / func_80045CDC): at skater +0xA1C, entries of 20 bytes from
+// +0x1F8 (name pointer, points, ...), count at +0x388. Banking sums the entries' points and multiplies by the
+// count, so a slot can be updated in place while its trick goes on; func_80045A70 rebuilds the HUD text.
+extern "C" void func_80045A70(uint8_t* rdram, recomp_context* ctx);
+constexpr uint32_t kComboList = 0xA1C, kComboEntries = 0x1F8, kComboCount = 0x388;
+
+ComboState::Seg name_kind(const std::string& n) {
+    using Seg = ComboState::Seg;
+    if (n.find("GRIND") != std::string::npos || n.find("SLIDE") != std::string::npos) return Seg::Grind;
+    if (n.find("MANUAL") != std::string::npos) return Seg::Manual;
+    if (n.find("PLANT") != std::string::npos || n.find("BONELESS") != std::string::npos) return Seg::Plant;
+    return Seg::Air;
+}
 
 void score_events(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t sk,
                   const s3::game::driver::TickRecord& r, ComboState& cs) {
     static const bool log = std::getenv("THPS_SKATE_LOG") != nullptr;
-    const auto& deck = r.board.back();
-    const Vec3 f = quat_rotate(deck.orientation, {0, 0, 1});
-    const float yaw = std::atan2(f[0], f[2]);
-    if (cs.airborne) {
-        float d = yaw - cs.last_yaw;
-        while (d > 3.14159265f) d -= 6.2831853f;
-        while (d < -3.14159265f) d += 6.2831853f;
-        cs.air_yaw += d;
-    }
-    cs.last_yaw = yaw;
+    using Seg = ComboState::Seg;
     auto combo_active = [&] { return s32(rdram, sk + 0x858) != 0; };
+    const uint32_t list = sk + kComboList;
+    bool bailed = false;
     for (const std::string& e : r.events) {
         if (log && e.rfind("CONTACT", 0) != 0 && e.rfind("CLIP:", 0) != 0) std::fprintf(stderr, "[skate] event %s\n", e.c_str());
-        if (e == "AIRBORNE") {
-            cs.airborne = true;
-            cs.air_yaw = 0.0f;
-            if (!combo_active()) call_game(func_8004C9E8, rdram, ctx, sk);
-        } else if (e.rfind("TRICK:", 0) == 0) {
-            const std::string id = e.substr(6);
-            if (!combo_active()) call_game(func_8004C9E8, rdram, ctx, sk);
-            if (combo_active()) {
-                const std::string name = display_name(id);
-                call_game(func_8004CACC, rdram, ctx, sk, trick_slot(id), game_string(rdram, name), trick_points(id));
-                if (log) std::fprintf(stderr, "[skate] + %s (%d)\n", name.c_str(), trick_points(id));
-            }
-        } else if (e.rfind("LANDED", 0) == 0) {
-            if (cs.airborne && combo_active()) {
-                // THPS's spin bonus: +0x424 counts half turns, +0x420 holds the rest (4096 = a full turn; the
-                // land function adds one more half turn from 0x5DD, about 132 degrees).
-                const float turns = std::fabs(cs.air_yaw) / 3.14159265f;
-                const int halves = int(turns);
-                w32(rdram, sk + 0x424, uint32_t(halves));
-                w32(rdram, sk + 0x420, uint32_t(int32_t((turns - float(halves)) * 2048.0f)));
-                call_game(func_8004CC10, rdram, ctx, sk);
-                if (log) std::fprintf(stderr, "[skate] landed, %.0f degrees of spin\n", std::fabs(cs.air_yaw) * 57.2958f);
-            }
-            cs.airborne = false;
-        } else if (e == "BAIL") {
-            call_game(func_8004CED0, rdram, ctx, sk);
-            cs.airborne = false;
+        if (e == "BAIL") bailed = true;
+    }
+    const std::string& st = r.physical_state;
+    Seg now = Seg::None;
+    if (r.wiping_out || st == "WipeoutGround") now = Seg::None;
+    else if (st == "PhysicsAir" || st == "KnownAir" || st == "PhysicsAirSecondary" || st == "Boneless") now = Seg::Air;
+    else if (st.rfind("Grind", 0) == 0 || st == "SlideGround") now = Seg::Grind;
+    else if (st == "HandPlant" || st == "FootPlant") now = Seg::Plant;
+    else if (r.motion_state.find("Manual") != std::string::npos) now = Seg::Manual;
+    // A segment survives a few ticks without its state (grind and manual states flicker for a tick or two).
+    if (now == Seg::None && cs.seg != Seg::None && !r.wiping_out && cs.gap < 6) {
+        cs.gap++;
+        now = cs.seg;
+    } else if (now == cs.seg) {
+        cs.gap = 0;
+    }
+
+    if (bailed) {
+        if (combo_active()) call_game(func_8004CED0, rdram, ctx, sk);
+        if (log && cs.in_combo) std::fprintf(stderr, "[skate] combo lost\n");
+        const std::string shown = r.score_name;
+        cs = ComboState{};
+        cs.announced = shown;
+        return;
+    }
+    // Names announced this tick: only those belong to what the skater is doing now.
+    const bool fresh = r.score_name != cs.announced && !r.score_name.empty();
+    cs.announced = r.score_name;
+    cs.pending_age++;
+    if (fresh) {
+        const Seg kind = name_kind(r.score_name);
+        if (kind == now && now != Seg::None) {
+            if (r.score_name != "#ID_TRICK_AIR" || cs.name.empty()) cs.name = r.score_name;
+        } else if (r.score_name != "#ID_TRICK_AIR") {
+            cs.pending = r.score_name;  // a flip's name on the take-off tick, a grind's a tick before the grind
+            cs.pending_age = 0;
         }
     }
-    (void)b;
+    if (now != cs.seg) {
+        cs.seg = now;
+        cs.name.clear();
+        cs.ticks = 0;
+        cs.rolling = 0;
+        cs.entry = -1;
+        cs.shown.clear();
+        cs.shown_points = -1;
+        cs.gap = 0;
+        if (now != Seg::None && cs.pending_age < 20 && name_kind(cs.pending) == now)
+            cs.name = cs.pending;
+    }
+    if (now == Seg::None) {
+        // Rolling: bank once nothing follows within the grace (Skate 3's landing frames, a quick re-pop).
+        if (cs.in_combo && ++cs.rolling > 20) {
+            if (combo_active()) {
+                w32(rdram, sk + 0x424, 0);  // spins are in the trick names and points; no THPS spin bonus on top
+                w32(rdram, sk + 0x420, 0);
+                call_game(func_8004CC10, rdram, ctx, sk);
+            }
+            if (log) std::fprintf(stderr, "[skate] combo banked\n");
+            cs.in_combo = false;
+        }
+        return;
+    }
+    cs.ticks++;
+    // An air only counts once it is a trick (rolling off a ledge is not); grinds, manuals and plants at once.
+    std::string sn = cs.name;
+    if (sn.empty() || sn == "#ID_TRICK_AIR") {
+        if (now == Seg::Air) return;
+        sn = now == Seg::Manual ? "#ID_TRICK_GROUND_TRICK_MANUAL" : now == Seg::Grind ? "#ID_TRICK_CATEGORY_GRIND"
+                                                                                       : "#ID_TRICK_BS_HANDPLANT";
+    }
+    const std::string name = skate3_name(b, sn);
+    const int pts = segment_points(now, sn, cs.ticks);
+    if (cs.entry < 0) {
+        if (!combo_active()) call_game(func_8004C9E8, rdram, ctx, sk);
+        if (!combo_active()) return;
+        const std::string key = sn.substr(0, sn.find(' '));
+        call_game(func_8004CACC, rdram, ctx, sk, trick_slot(key), game_string(rdram, name), pts);
+        const int count = s32(rdram, list + kComboCount);
+        if (count <= 0) return;
+        cs.entry = count - 1;
+        const int stored = s32(rdram, list + kComboEntries + uint32_t(cs.entry) * 20 + 4);
+        cs.ratio = pts > 0 ? float(stored) / float(pts) : 1.0f;
+        cs.shown = name;
+        cs.shown_points = pts;
+        cs.in_combo = true;
+        if (log) std::fprintf(stderr, "[skate] + %s (%d)\n", name.c_str(), stored);
+        return;
+    }
+    if (name == cs.shown && pts == cs.shown_points) return;
+    if (s32(rdram, list + kComboCount) != cs.entry + 1) return;  // the list moved on (banked elsewhere)
+    const uint32_t e = list + kComboEntries + uint32_t(cs.entry) * 20;
+    w32(rdram, e, game_string(rdram, name));
+    w32(rdram, e + 4, uint32_t(int32_t(std::lround(float(pts) * cs.ratio))));
+    call_game(func_80045A70, rdram, ctx, list);
+    if (log && name != cs.shown) std::fprintf(stderr, "[skate] = %s\n", name.c_str());
+    cs.shown = name;
+    cs.shown_points = pts;
 }
 
 // ----------------------------------------------------------------- sounds ----
@@ -973,7 +1111,7 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
         if (cues.bail) b.bail_timer = 75;
     }
     {
-        if (!last.trick_name.empty()) b.last_trick = display_name(last.trick_name);
+        if (!last.score_name.empty()) b.last_trick = skate3_name(b, last.score_name);
         const auto& v = last.board.back().linear_velocity;
         thps::trainer::Status st;
         st.speed_kmh = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) * 3.6f;
