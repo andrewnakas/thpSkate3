@@ -55,8 +55,11 @@ python3 tools/thps_pack.py work/thps.z64 work/pack
 python3 -c "import sys; sys.path.insert(0,'tools'); import thps_level as l; l.export_all('work/pack','work/levels')"
 python3 -c "import sys; sys.path.insert(0,'tools'); import thps_skel as s; s.export_rigs('work/pack','work/levels/rigs.thr')"
 
-# Skate 3 cleanroom pack (never commit it): core.pack from the cleanroom site's pack.json
-# (https://andrewnakas.github.io/skate3-cleanroom/, as skatecore-cpp's README describes) -> data/cleanpack/core.pack
+# Skate 3 data (never commit it): core.pack in data/cleanpack/. Its Skate 3 files (animation banks, state graphs,
+# input/camera config) can be taken from your own Xbox 360 Skate 3 disc image, read directly (XDVDFS + EB .big +
+# RefPack). A few converted files (the skater model, two converted tables, game.json) still come from a base pack.
+python3 tools/s3_import.py check SKATE3.iso data/cleanpack/core.pack     # which stock files match the disc
+python3 tools/s3_import.py build SKATE3.iso BASE.pack data/cleanpack/core.pack
 
 # build and run
 cd port
