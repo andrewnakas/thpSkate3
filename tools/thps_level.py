@@ -305,11 +305,14 @@ def _weld(points, eps):
     return rep, out
 
 
-def set_back_lip_walls(tris, depth=60.0, height=800.0):
+def set_back_lip_walls(tris, depth=20.0, height=800.0, vert=30.0):
     """Many THPS quarter pipes end against a solid wall standing right on the lip (Warehouse's building walls).
     THPS's own physics launches straight up at a vert lip; Skate 3 instead keeps its wheels on the wall and rides
     up and along it. For collision only, the band of such a wall from the lip up to `height` units is moved back
-    by `depth` units behind a flat deck strip, so every lip is a convex coping edge Skate 3 launches from.
+    by `depth` units behind a flat deck strip, so every lip is a convex coping edge Skate 3 launches from. Only quarter
+    pipes count (top face 65 degrees or steeper), and the bottom `vert` units of the wall stay where they are as a
+    vertical lip extension, so the skater leaves straight up as in THPS instead of drifting back into the wall. The
+    set-back is kept small: anything deeper lets the skater visibly into the wall.
     tris: [(verts, face, obj)]. Returns (tris, number of lips set back)."""
     def sub(a, b): return [a[k] - b[k] for k in range(3)]
     def unit_normal(v):
@@ -333,14 +336,14 @@ def set_back_lip_walls(tris, depth=60.0, height=800.0):
     boxes = {}  # wall index -> [(u0, u1, lip y)]
     for i in solid:
         n = norms[i]
-        if not n or not (0.01 < -n[1] < 0.64):  # ramp faces 50..89 degrees, outward (up) side
+        if not n or not (0.01 < -n[1] < 0.42):  # quarter-pipe tops, 65..89 degrees, outward (up) side
             continue
         hn = math.hypot(n[0], n[2])
         hr = (n[0] / hn, n[2] / hn)
         v = tris[i][0]
         a, b = sorted(((v[k], v[(k + 1) % 3]) for k in range(3)), key=lambda e: e[0][1] + e[1][1])[0]  # highest edge
         span = math.hypot(b[0] - a[0], b[2] - a[2])
-        if span < 8.0 or abs(a[1] - b[1]) > 0.25 * span:
+        if span < 8.0 or abs(a[1] - b[1]) > 0.03 * span + 1.0:  # a level coping line only
             continue
         yl = min(a[1], b[1])
         mx, mz = (a[0] + b[0]) / 2, (a[2] + b[2]) / 2
@@ -355,11 +358,22 @@ def set_back_lip_walls(tris, depth=60.0, height=800.0):
             if min(p[1] for p in wv) > yl - 50 or max(p[1] for p in wv) < yl - 2:
                 continue  # the wall must rise above the lip and reach down to it
             t = (-wn[2] / hw, wn[0] / hw)  # horizontal tangent of the wall
-            uw = [p[0] * t[0] + p[2] * t[1] for p in wv]
             ue = sorted([a[0] * t[0] + a[2] * t[1], b[0] * t[0] + b[2] * t[1]])
-            u0, u1 = max(ue[0], min(uw)), min(ue[1], max(uw))
+            # where the wall triangle actually is, at the lip and at the top of the vert extension
+            u0, u1 = ue
+            for y in (yl, yl - vert):
+                us = []
+                for k in range(3):
+                    p, q = wv[k], wv[(k + 1) % 3]
+                    if (p[1] - y) * (q[1] - y) <= 0 and p[1] != q[1]:
+                        f = (y - p[1]) / (q[1] - p[1])
+                        us.append((p[0] + f * (q[0] - p[0])) * t[0] + (p[2] + f * (q[2] - p[2])) * t[1])
+                if len(us) < 2:
+                    u0, u1 = 1.0, 0.0
+                    break
+                u0, u1 = max(u0, min(us)), min(u1, max(us))
             if u1 - u0 > 4.0:
-                boxes.setdefault(w, []).append((u0, u1, yl))
+                boxes.setdefault(w, []).append((u0, u1, yl - vert))
 
     def clip(poly, f):  # keep the part with f(p) <= 0
         out = []
@@ -412,8 +426,7 @@ def set_back_lip_walls(tris, depth=60.0, height=800.0):
             pieces = rest
             lips += 1
             # the deck strip on top of the lip, facing up (-y)
-            # anchor the strip on the wall plane: offset along the normal to the plane through verts[0]
-            d0 = sum((verts[0][k]) * wn[k] for k in range(3)) / hw
+            d0 = (verts[0][0] * wn[0] + verts[0][2] * wn[2]) / hw  # horizontal offset of the wall line
             nrm = (wn[0] / hw, wn[2] / hw)
             def on_plane(u):
                 return [u * t[0] + d0 * nrm[0], yl, u * t[1] + d0 * nrm[1]]
@@ -610,7 +623,7 @@ def subdivide_curves(rep, faces, iterations=2, max_angle=46.0, min_angle=2.0, ma
     return faces
 
 
-def smooth_solids(tris, weld_eps=1.0, tj_eps=0.75, passes=4, curve_passes=2):
+def smooth_solids(tris, weld_eps=1.0, tj_eps=0.75, passes=4, curve_passes=0):
     """Collision smoothing for Skate 3's wheels: weld near-coincident vertices of the solid faces, then repair
     T-junctions (a vertex lying on another triangle's open edge splits that edge), so neighbouring faces share
     edges and skatecore sees continuous surfaces instead of sharp open edges. Non-solid faces pass unchanged.
@@ -697,10 +710,9 @@ def smooth_solids(tris, weld_eps=1.0, tj_eps=0.75, passes=4, curve_passes=2):
         faces = new_faces
         if not changed:
             break
-    # Curved ramps (quarter pipes, banks, transitions) are a few flat facets in THPS; Skate 3's wheels feel every
-    # facet edge as a bump. Round them: Loop subdivision on the faces next to a shallow crease, with sharp edges
-    # (coping, curbs, walls) and the region's border kept straight; the border's new midpoints are joined to the
-    # neighbouring faces by the T-junction repair below.
+    # Optional rounding of curved ramps (Loop subdivision next to shallow creases). Off by default: subdivision
+    # moves vertices off THPS's surfaces (15-100 units in thousands of places), which the player meets as invisible
+    # bumps and walls where the collision stands proud of what is drawn, and clipping where it sinks below it.
     faces = subdivide_curves(rep, faces, iterations=curve_passes)
     grid.clear()
     for i, p in enumerate(rep):

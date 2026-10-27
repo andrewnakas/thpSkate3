@@ -135,8 +135,11 @@ int main(int argc, char** argv) {
     std::printf("%s: %zu ramp probes\n", argv[2], probes.size());
 
     s3::game::trainer::TrainerTuning tt;
-    tt.push_speed = 3.0f;
-    tt.push_power = 3.0f;
+    // HIGH=k: push speed/power x k (default 3) to get big airs out of the quarter pipes.
+    const float boost = std::getenv("HIGH") ? std::strtof(std::getenv("HIGH"), nullptr) : 3.0f;
+    tt.push_speed = boost;
+    tt.push_power = boost;
+    int air_hits = 0;
     int hits = 0;
     for (size_t i = 0; i < probes.size(); i++) {
         const auto& pr = probes[i];
@@ -149,6 +152,8 @@ int main(int argc, char** argv) {
         auto sim = std::move(loaded.unwrap());
         sim->set_tuning(tt, 1.0f);
         std::vector<float> speed;
+        V prev_v{};
+        bool prev_air = false;
         std::string event;
         float rise_grounded = 0.0f, rise_air = 0.0f;
         std::map<std::string, int> states;
@@ -162,6 +167,32 @@ int main(int argc, char** argv) {
             const auto& b = r.board.back();
             const auto& v = b.linear_velocity;
             speed.push_back(std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
+            // In the air only gravity should act: a horizontal kick of over 0.8 m/s, or the board stopping while
+            // rising, in one tick is the board hitting something. Report it with the nearest collision face.
+            const bool air = !r.grounded && !r.wiping_out;
+            if (air && prev_air) {
+                const float dh = std::hypot(v[0] - prev_v[0], v[2] - prev_v[2]);
+                const float dy = v[1] - prev_v[1];
+                if (dh > 0.8f || (prev_v[1] > 1.0f && dy < -1.0f)) {
+                    const V q{b.position[0], b.position[1], b.position[2]};
+                    float best = 1e9f;
+                    const Tri* bt = nullptr;
+                    for (const auto& ct : tris)
+                        if (float d = tri_dist(ct, q); d < best) best = d, bt = &ct;
+                    const V w = thpskate::from_s3(q);
+                    std::printf("AIRHIT probe %zu t%d at thps(%.0f %.0f %.0f) height %.2f m dv_h %.2f dv_y %.2f", i, t, w[0], w[1], w[2],
+                                q[1] - pr.spawn[1], dh, dy);
+                    if (bt) {
+                        const V a = thpskate::from_s3(bt->p[0]), bb = thpskate::from_s3(bt->p[1]), c = thpskate::from_s3(bt->p[2]);
+                        std::printf("  nearest %.2f m: n(%.2f %.2f %.2f) tri (%.0f %.0f %.0f)(%.0f %.0f %.0f)(%.0f %.0f %.0f)", best, bt->n[0],
+                                    bt->n[1], bt->n[2], a[0], a[1], a[2], bb[0], bb[1], bb[2], c[0], c[1], c[2]);
+                    }
+                    std::printf("\n");
+                    air_hits++;
+                }
+            }
+            prev_v = {v[0], v[1], v[2]};
+            prev_air = air;
             const V p{b.position[0], b.position[1], b.position[2]};
             if (std::getenv("VERBOSE")) states[r.physical_state]++;
             const float rise = p[1] - pr.spawn[1];
@@ -214,6 +245,6 @@ int main(int argc, char** argv) {
                     *std::max_element(speed.begin(), speed.end()));
         std::fflush(stdout);
     }
-    std::printf("%s: %d hits of %zu probes, %d phantom-surface ticks\n", argv[2], hits, probes.size(), phantom_total);
+    std::printf("%s: %d hits of %zu probes, %d phantom-surface ticks, %d air hits\n", argv[2], hits, probes.size(), phantom_total, air_hits);
     return 0;
 }

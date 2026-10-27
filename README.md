@@ -17,9 +17,9 @@ and the Skate 3 cleanroom pack.
 | Bridge: runs skatecore each frame, writes the skater, scores tricks through THPS's combo code, fires THPS trigger scripts (glass, gaps), poses the THPS character from Skate 3's skeleton | `port/src/skate_bridge.cpp` |
 | Skater sounds: THPS's own rolling/grind/air loops (by surface) and ollie, push, landing and bail sounds, driven by Skate 3's state and events | `port/src/skate_bridge.cpp` |
 | Trainer menu (RT64 ImGui overlay) | `port/src/skate_trainer.cpp` |
-| Level collision, grind rails and restart points extracted from the ROM, with collision smoothing (welds, T-junction repair, rounded transitions, floor mats and plates flattened so wheels
-roll over them, and walls standing on a quarter pipe's lip set back behind a small deck so Skate 3 launches off the
-coping instead of riding up the wall) | `tools/thps_level.py`, `src/skate/level.cpp` |
+| Level collision, grind rails and restart points extracted from the ROM, with collision cleanup that keeps every surface where THPS draws it (seams welded, T-junctions repaired, floor mats
+and plates flattened so wheels roll over them, and walls standing on a quarter pipe's lip set back 20 cm above a
+30 cm vert so Skate 3 launches straight up off the coping instead of riding up the wall) | `tools/thps_level.py`, `src/skate/level.cpp` |
 | Character rigs (bones, joints) for the retargeting | `tools/thps_skel.py` |
 | ROM asset pack reader | `tools/thps_pack.py` |
 
