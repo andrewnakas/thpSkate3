@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <set>
 #include <cctype>
 #include <sstream>
 #include <map>
@@ -605,7 +606,9 @@ std::string skate3_name(const Bridge& b, const std::string& score_name) {
         std::string text;
         if (auto it = names.find(token); it != names.end()) text = it->second;
         else if (auto it2 = names.find("ID_TRICK_" + token); it2 != names.end()) text = it2->second;
-        else {
+        else if (!token.empty() && !std::isdigit(uint8_t(token[0]))) {
+            static std::set<std::string> reported;  // names the disc's table lacks: tidy the id, say so once
+            if (reported.insert(token).second) std::fprintf(stderr, "[skate] no Skate 3 name for %s\n", token.c_str());
             std::string t = token.rfind("ID_TRICK_", 0) == 0 ? token.substr(9) : token;
             for (const char* pre : {"GRIND_", "GROUND_TRICK_", "FLIP_", "GRAB_", "AIR_METRICS_", "AIR_"})
                 if (t.rfind(pre, 0) == 0) { t = t.substr(std::strlen(pre)); break; }
@@ -613,6 +616,8 @@ std::string skate3_name(const Bridge& b, const std::string& score_name) {
                 if (t[i + 1] == '_' && std::isdigit(uint8_t(t[i])) && std::isdigit(uint8_t(t[i + 2]))) t[i + 1] = '-';
             for (char& c : t) if (c == '_') c = ' ';
             text = t;
+        } else {
+            text = token;  // spin degrees
         }
         if (!out.empty()) out += ' ';
         out += text;

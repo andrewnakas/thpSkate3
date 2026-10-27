@@ -8,8 +8,8 @@
   python3 tools/s3_import.py extract SKATE3.iso DIR             copy the files the Skate 3 asset converter reads
                                                                  (default.xex, data/big/{miscload,miscboot,db}.big,
                                                                  data/content/createacharacter.big, data/anim/) to DIR
-  python3 tools/s3_import.py names SKATE3.iso OUT.tsv            Skate 3's English trick names (ID_TRICK_* -> text)
-                                                                 from the disc's language tables, for the HUD
+  python3 tools/s3_import.py names SKATE3.iso OUT.tsv            Skate 3's English trick names (ID_TRICK_*, GRIND_*
+                                                                 -> text) from the disc's language tables, for the HUD
   python3 tools/s3_import.py make  STAGE_ASSETS OUT              write OUT from a disc conversion (the files listed
                                                                  in tools/s3_pack_files.txt, under STAGE_ASSETS =
                                                                  the converter's assets/ folder); no base pack
@@ -268,8 +268,10 @@ def main(argv):
             return out
         labels = table(disc.get('data/fe/languages/labels/language_labels_global_skate3ng.bin'))
         english = table(disc.get('data/fe/languages/english/language_english_global_skate3ng.bin'))
+        # Trick ids (ID_TRICK_*) and the scoring labels the game shows directly (GRIND_BS_CROOKED -> BS Crooked).
         rows = sorted((labels[h], english[h]) for h in labels
-                      if h in english and labels[h].startswith('ID_TRICK') and not labels[h].endswith('_DESC'))
+                      if h in english and labels[h].startswith(('ID_TRICK', 'GRIND_'))
+                      and not labels[h].endswith('_DESC'))
         with open(argv[3], 'w', encoding='utf-8') as f:
             for k, v in rows:
                 f.write(f'{k}\t{v}\n')
