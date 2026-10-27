@@ -7,7 +7,7 @@ Skate 3 camera. The THPS characters are animated by Skate 3's skeleton. An SK8TR
 
 It runs on the native port of the [THPS64 decompilation](https://github.com/andrewnakas/thps64) (N64Recomp +
 N64ModernRuntime + RT64). Nothing from either game is in this repository: you need your own THPS N64 ROM (US V1.1)
-and the Skate 3 cleanroom pack.
+and your own Xbox 360 Skate 3 disc image.
 
 ## How it works
 
@@ -55,11 +55,10 @@ python3 tools/thps_pack.py work/thps.z64 work/pack
 python3 -c "import sys; sys.path.insert(0,'tools'); import thps_level as l; l.export_all('work/pack','work/levels')"
 python3 -c "import sys; sys.path.insert(0,'tools'); import thps_skel as s; s.export_rigs('work/pack','work/levels/rigs.thr')"
 
-# Skate 3 data (never commit it): core.pack in data/cleanpack/. Its Skate 3 files (animation banks, state graphs,
-# input/camera config) can be taken from your own Xbox 360 Skate 3 disc image, read directly (XDVDFS + EB .big +
-# RefPack). A few converted files (the skater model, two converted tables, game.json) still come from a base pack.
-python3 tools/s3_import.py check SKATE3.iso data/cleanpack/core.pack     # which stock files match the disc
-python3 tools/s3_import.py build SKATE3.iso BASE.pack data/cleanpack/core.pack
+# Skate 3 data from your own Xbox 360 Skate 3 disc image (about a minute; needs uv for numpy/Pillow and ~1.5 GB
+# of scratch space). Writes data/cleanpack/core.pack: animation banks, state graphs, physics tables and the skater
+# model, converted by skate-3-rust-engine's asset pipeline (fetched at a pinned revision). Never commit it.
+tools/import_skate3.sh "/path/to/Skate 3.iso" [SCRATCH_DIR]
 
 # build and run
 cd port

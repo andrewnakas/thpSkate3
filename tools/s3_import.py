@@ -5,6 +5,12 @@
   python3 tools/s3_import.py check SKATE3.iso PACK              compare PACK's stock/data files with the disc's
   python3 tools/s3_import.py build SKATE3.iso BASE_PACK OUT     write OUT: BASE_PACK with every stock/data file
                                                                  replaced by the disc's own copy
+  python3 tools/s3_import.py extract SKATE3.iso DIR             copy the files the Skate 3 asset converter reads
+                                                                 (default.xex, data/big/{miscload,miscboot,db}.big,
+                                                                 data/content/createacharacter.big, data/anim/) to DIR
+  python3 tools/s3_import.py make  STAGE_ASSETS OUT              write OUT from a disc conversion (the files listed
+                                                                 in tools/s3_pack_files.txt, under STAGE_ASSETS =
+                                                                 the converter's assets/ folder); no base pack
 
 The pack (skatecore-cpp's SKPK1 format: b'SKPK1\\0\\0\\0', u32 count, then per file u32 name length, name, u64 size,
 bytes; little-endian) keeps Skate 3's own files under assets/private/stock/data/..., mirroring the disc's data/ tree.
@@ -215,6 +221,39 @@ def main(argv):
         print(__doc__)
         return 2
     cmd, iso = argv[1], argv[2]
+    if cmd == 'make':
+        listed = [l.strip() for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 's3_pack_files.txt'))
+                  if l.strip() and not l.startswith('#')]
+        entries, missing = [], []
+        for name in listed:
+            path = os.path.join(argv[2], name[len('assets/'):])
+            if os.path.isfile(path):
+                entries.append((name, open(path, 'rb').read()))
+            else:
+                missing.append(name)
+        if missing:
+            print(f'{len(missing)} files missing from {argv[2]}, e.g. {missing[:3]}')
+            return 1
+        write_pack(argv[3], entries)
+        print(f'{argv[3]}: {len(entries)} files, {sum(len(d) for _, d in entries) / 1e6:.1f} MB')
+        return 0
+    if cmd == 'extract':
+        x = Xiso(iso)
+        want = {'default.xex', 'data/big/miscload.big', 'data/big/miscboot.big', 'data/big/db.big',
+                'data/content/createacharacter.big'}
+        for key, (p, s, n) in x.files().items():
+            if key in want or key.startswith('data/anim/'):
+                out = os.path.join(argv[3], p)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                with open(out, 'wb') as f:
+                    left, sector = n, s
+                    while left > 0:
+                        chunk = min(left, 64 << 20)  # a whole number of sectors
+                        f.write(x.read(sector, chunk))
+                        sector += chunk // SECTOR
+                        left -= chunk
+                print(f'{n:12d}  {p}')
+        return 0
     disc = Disc(iso)
     if cmd == 'list':
         pat = argv[3].lower() if len(argv) > 3 else ''
