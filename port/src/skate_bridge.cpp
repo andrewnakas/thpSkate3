@@ -376,10 +376,24 @@ void write_skater(Bridge& b, uint8_t* rdram, uint32_t sk, const s3::game::driver
     // Root of the animated skater (at the feet), skatecore metres -> THPS units.
     Vec3 root = thpskate::from_s3({pres.root[3][0], pres.root[3][1], pres.root[3][2]}, b.units);
     root[1] -= kOriginHeight;
+    // +0x16C is last frame's position, kept by the physics routine this replaces (func_80059BEC: V3(0x16C) =
+    // V3(0x4) before it moves the skater; its V3(0x2A8) copy is left alone, writing it stopped the skater). After
+    // the skater update THPS collects pickups (letters, tapes) along the segment +0x16C -> +0x4 (func_8004BE0C), so
+    // a stale +0x16C collected every item between where it was last set and the skater. A teleport (respawn,
+    // marker, Skate 3's own reset) starts the segment afresh.
+    std::array<int32_t, 3> pos{};
+    double moved2 = 0.0;
     for (int i = 0; i < 3; i++) {
-        const int32_t v = int32_t(std::lround(double(root[size_t(i)]) * 4096.0));
-        w32(rdram, sk + 4 + 4 * uint32_t(i), uint32_t(v));
-        b.written[size_t(i)] = v;
+        pos[size_t(i)] = int32_t(std::lround(double(root[size_t(i)]) * 4096.0));
+        const double d = (double(pos[size_t(i)]) - double(s32(rdram, sk + 4 + 4 * uint32_t(i)))) / 4096.0;
+        moved2 += d * d;
+    }
+    const bool fresh = !b.have_written || moved2 > double(2.5f * b.units) * double(2.5f * b.units);
+    for (int i = 0; i < 3; i++) {
+        const uint32_t k = 4 * uint32_t(i);
+        w32(rdram, sk + 0x16C + k, fresh ? uint32_t(pos[size_t(i)]) : r32(rdram, sk + 4 + k));
+        w32(rdram, sk + 4 + k, uint32_t(pos[size_t(i)]));
+        b.written[size_t(i)] = pos[size_t(i)];
     }
     b.have_written = true;
     // Orientation from the deck, in THPS's own (mirrored) convention: column 1 up, column 2 = -forward,
@@ -545,8 +559,14 @@ void run_triggers(Bridge& b, uint8_t* rdram, const recomp_context* ctx, const Ve
         const float len = std::sqrt(dot(d, d));
         if (len > 1e-3f)
             for (int k = 0; k < 3; k++) p[size_t(k)] -= d[size_t(k)] / len * 16.0f;
+        // Skate 3 moves the skater itself after a wipeout (its Teleporting reset), which does not go through
+        // spawn(): a segment from the crash to the reset point would collect every letter and tape between them.
+        // Real motion is at most ~0.5 m a THPS frame; anything over 2.5 m is a teleport and tests nothing.
+        const bool teleport = len > 2.5f * b.units;
+        if (teleport && log) std::fprintf(stderr, "[skate] teleport of %.0f units: no trigger test\n", len);
         uint32_t fired = 0;
         for (const auto& t : b.triggers) {
+            if (teleport) break;
             if (t.key == fired || !segment_hits(p, origin, t.v)) continue;
             call_game(func_80061D7C, rdram, ctx, t.key, 1);
             fired = t.key;
