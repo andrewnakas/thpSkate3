@@ -192,8 +192,9 @@ def export_all(packdir, outdir):
     os.makedirs(outdir, exist_ok=True)
     for level in LEVEL_PSX_INDEX:
         tris, flat = flatten_low_steps(level_triangles(packdir, level))
+        tris, lips = set_back_lip_walls(tris)
         tris, before, after = smooth_solids(tris)
-        print(f'{level}: {flat} low slab faces flattened')
+        print(f'{level}: {flat} low slab faces flattened, {lips} quarter-pipe lips set back from walls')
         write_cache(tris, object_keys(packdir, level), rails(packdir, level), restarts(packdir, level),
                     os.path.join(outdir, level + '.thl'))
         print(f'{level}: {len(tris)} triangles, open solid edges {before} -> {after}')
@@ -304,6 +305,130 @@ def _weld(points, eps):
     return rep, out
 
 
+def set_back_lip_walls(tris, depth=60.0, height=800.0):
+    """Many THPS quarter pipes end against a solid wall standing right on the lip (Warehouse's building walls).
+    THPS's own physics launches straight up at a vert lip; Skate 3 instead keeps its wheels on the wall and rides
+    up and along it. For collision only, the band of such a wall from the lip up to `height` units is moved back
+    by `depth` units behind a flat deck strip, so every lip is a convex coping edge Skate 3 launches from.
+    tris: [(verts, face, obj)]. Returns (tris, number of lips set back)."""
+    def sub(a, b): return [a[k] - b[k] for k in range(3)]
+    def unit_normal(v):
+        u, w = sub(v[1], v[0]), sub(v[2], v[0])
+        n = (u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0])
+        ln = math.sqrt(sum(x * x for x in n))
+        return tuple(x / ln for x in n) if ln > 1e-9 else None
+
+    solid = [i for i, t in enumerate(tris) if (t[1] & 0x30000) == 0]
+    norms = {i: unit_normal(tris[i][0]) for i in solid}
+    walls = [i for i in solid if norms[i] and abs(norms[i][1]) < 0.05]
+    # walls by coarse grid cell of their horizontal extent, for the lip search
+    cell = 512.0
+    grid = {}
+    for i in walls:
+        xs = [v[0] for v in tris[i][0]]; zs = [v[2] for v in tris[i][0]]
+        for gx in range(int(math.floor(min(xs) / cell)), int(math.floor(max(xs) / cell)) + 1):
+            for gz in range(int(math.floor(min(zs) / cell)), int(math.floor(max(zs) / cell)) + 1):
+                grid.setdefault((gx, gz), []).append(i)
+
+    boxes = {}  # wall index -> [(u0, u1, lip y)]
+    for i in solid:
+        n = norms[i]
+        if not n or not (0.01 < -n[1] < 0.64):  # ramp faces 50..89 degrees, outward (up) side
+            continue
+        hn = math.hypot(n[0], n[2])
+        hr = (n[0] / hn, n[2] / hn)
+        v = tris[i][0]
+        a, b = sorted(((v[k], v[(k + 1) % 3]) for k in range(3)), key=lambda e: e[0][1] + e[1][1])[0]  # highest edge
+        span = math.hypot(b[0] - a[0], b[2] - a[2])
+        if span < 8.0 or abs(a[1] - b[1]) > 0.25 * span:
+            continue
+        yl = min(a[1], b[1])
+        mx, mz = (a[0] + b[0]) / 2, (a[2] + b[2]) / 2
+        for w in grid.get((int(math.floor(mx / cell)), int(math.floor(mz / cell))), []):
+            wn = norms[w]
+            hw = math.hypot(wn[0], wn[2])
+            if (wn[0] * hr[0] + wn[2] * hr[1]) / hw < 0.7:
+                continue
+            wv = tris[w][0]
+            if not all(abs(sum((p[k] - wv[0][k]) * wn[k] for k in range(3))) < 4.0 for p in (a, b)):
+                continue
+            if min(p[1] for p in wv) > yl - 50 or max(p[1] for p in wv) < yl - 2:
+                continue  # the wall must rise above the lip and reach down to it
+            t = (-wn[2] / hw, wn[0] / hw)  # horizontal tangent of the wall
+            uw = [p[0] * t[0] + p[2] * t[1] for p in wv]
+            ue = sorted([a[0] * t[0] + a[2] * t[1], b[0] * t[0] + b[2] * t[1]])
+            u0, u1 = max(ue[0], min(uw)), min(ue[1], max(uw))
+            if u1 - u0 > 4.0:
+                boxes.setdefault(w, []).append((u0, u1, yl))
+
+    def clip(poly, f):  # keep the part with f(p) <= 0
+        out = []
+        for k in range(len(poly)):
+            p, q = poly[k], poly[(k + 1) % len(poly)]
+            fp, fq = f(p), f(q)
+            if fp <= 0:
+                out.append(p)
+            if (fp < 0 < fq) or (fq < 0 < fp):
+                s = fp / (fp - fq)
+                out.append([p[j] + s * (q[j] - p[j]) for j in range(3)])
+        return out if len(out) >= 3 else []
+
+    def fan(poly):
+        return [[tuple(poly[0]), tuple(poly[k]), tuple(poly[k + 1])] for k in range(1, len(poly) - 1)]
+
+    out = [t for k, t in enumerate(tris) if k not in boxes]
+    lips = 0
+    for w, bl in boxes.items():
+        verts, face, obj = tris[w]
+        wn = norms[w]
+        hw = math.hypot(wn[0], wn[2])
+        t = (-wn[2] / hw, wn[0] / hw)
+        back = (-wn[0] / hw * depth, 0.0, -wn[2] / hw * depth)
+        # merge boxes on the same lip height
+        bl.sort()
+        merged = []
+        for u0, u1, yl in bl:
+            if merged and u0 <= merged[-1][1] + 1.0 and abs(yl - merged[-1][2]) < 10.0:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], u1), min(merged[-1][2], yl))
+            else:
+                merged.append((u0, u1, yl))
+        pieces = [[list(p) for p in verts]]
+        for u0, u1, yl in merged:
+            uf = lambda p: p[0] * t[0] + p[2] * t[1]
+            rest = []
+            for poly in pieces:
+                cuts = [lambda p: u0 - uf(p), lambda p: uf(p) - u1, lambda p: (yl - height) - p[1], lambda p: p[1] - yl]
+                inside = poly
+                for c in cuts:  # outside pieces: each half-plane beyond the box, peeled off in turn
+                    o = clip(inside, lambda p, c=c: -c(p))
+                    if o:
+                        rest.append(o)
+                    inside = clip(inside, c)
+                    if not inside:
+                        break
+                if inside:
+                    moved = [[p[j] + back[j] for j in range(3)] for p in inside]
+                    out += [(tri, face, obj) for tri in fan(moved)]
+            pieces = rest
+            lips += 1
+            # the deck strip on top of the lip, facing up (-y)
+            # anchor the strip on the wall plane: offset along the normal to the plane through verts[0]
+            d0 = sum((verts[0][k]) * wn[k] for k in range(3)) / hw
+            nrm = (wn[0] / hw, wn[2] / hw)
+            def on_plane(u):
+                return [u * t[0] + d0 * nrm[0], yl, u * t[1] + d0 * nrm[1]]
+            A, B = on_plane(u0), on_plane(u1)
+            C = [B[j] + back[j] for j in range(3)]
+            D = [A[j] + back[j] for j in range(3)]
+            for tri in ([A, B, C], [A, C, D]):
+                n = unit_normal(tri)
+                if n and n[1] > 0:
+                    tri = [tri[0], tri[2], tri[1]]
+                out.append(([tuple(p) for p in tri], face, obj))
+        out += [(tri, face, obj) for poly in pieces for tri in fan(poly)]
+    return out, lips
+
+
 def flatten_low_steps(tris, max_step=12.0, cell=128.0):
     """Floor mats, boards and plates in THPS stand a few units proud of the floor with a vertical edge; THPS's
     skater rolls over them, Skate 3's wheels catch the edge at speed and throw the rider. Every near-level solid
@@ -377,9 +502,11 @@ def flatten_low_steps(tris, max_step=12.0, cell=128.0):
     return out, changed
 
 
-def subdivide_curves(rep, faces, iterations=2, max_angle=46.0, min_angle=2.0):
+def subdivide_curves(rep, faces, iterations=2, max_angle=46.0, min_angle=2.0, max_slope=60.0):
     """Loop subdivision of the faces touching a shallow crease (min_angle..max_angle degrees between the two
-    faces' normals). rep: vertex list (extended in place); faces: [([a, b, c], face, obj)]. Vertices on a sharp
+    faces' normals). Faces steeper than max_slope degrees (the top of a quarter pipe, walls) are left as THPS
+    built them: rounding them pulled the vertices under a ramp's lip outwards, curling the ramp past vertical into
+    an overhang that Skate 3's wheels kept riding instead of launching. rep: vertex list (extended in place); faces: [([a, b, c], face, obj)]. Vertices on a sharp
     crease, an open edge or the region's border stay put, and edges on the border get plain midpoints, so the
     region still meets its neighbours along the same straight lines."""
     def normal(f):
@@ -390,6 +517,7 @@ def subdivide_curves(rep, faces, iterations=2, max_angle=46.0, min_angle=2.0):
         ln = math.sqrt(sum(x * x for x in n))
         return tuple(x / ln for x in n) if ln > 1e-9 else None
 
+    flat = math.cos(math.radians(max_slope))  # THPS y points down: a face's up component is -normal.y
     for _ in range(iterations):
         edges = {}  # sorted edge -> [(face index, directed)]
         for fi, (f, _, _) in enumerate(faces):
@@ -429,7 +557,7 @@ def subdivide_curves(rep, faces, iterations=2, max_angle=46.0, min_angle=2.0):
         region = set()
         for key in edges:
             if crease(key):
-                region.update(fi for fi, _ in edges[key])
+                region.update(fi for fi, _ in edges[key] if norms[fi] is not None and -norms[fi][1] >= flat)
         if not region:
             break
         # vertex -> incident faces / edges

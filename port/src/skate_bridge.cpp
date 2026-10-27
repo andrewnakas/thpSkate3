@@ -683,6 +683,27 @@ void skater_sounds(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_
 
 }  // namespace
 
+// The run clock lives in the physics routine the bridge replaces (func_80059BEC): once the skater's end time (+0x428)
+// is behind the frame counter (D_800DE994) it plays the time-up sound and calls func_80082660, which raises
+// D_800DE9AC; func_80036664 then ends the run when the skater is on the ground (+0x82C == 0).
+extern "C" void func_80082660(uint8_t* rdram, recomp_context* ctx);
+extern "C" void func_80039E60(uint8_t* rdram, recomp_context* ctx);
+void run_clock(uint8_t* rdram, recomp_context* ctx, uint32_t sk) {
+    const int32_t mode = s32(rdram, 0x800DE7A0);
+    if (mode == 2) return;
+    const int32_t now = s32(rdram, 0x800DE994);
+    const bool countdown = s32(rdram, 0x800DE7B0) != 0;
+    const int32_t left = countdown ? 100 - now : s32(rdram, sk + 0x428) - now;
+    if (left >= 0 || s32(rdram, 0x800DE9AC) != 0) return;
+    if (countdown) {
+        w32(rdram, 0x800DE804, 8);
+        return;
+    }
+    if (mode == 1 && s32(rdram, kLevelTable + uint32_t(s32(rdram, 0x800C0E20)) * 0x78 + 0xC) != 0)
+        call_game(func_80039E60, rdram, ctx, 0xA0, 10000, 0);
+    call_game(func_80082660, rdram, ctx, 0);
+}
+
 extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
     Bridge& b = bridge();
     if (!b.enabled || b.failed) return 0;
@@ -694,6 +715,7 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
     }
     const std::string level = current_level(rdram);
     if (level.empty()) return 0;
+    run_clock(rdram, ctx, sk);
     // A background rebuild: hold the skater still (THPS keeps drawing the last pose) until it is ready.
     if (b.build.valid()) {
         if (b.build.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return 1;
