@@ -146,6 +146,7 @@ int main(int argc, char** argv) {
         thpskate::MapOptions opt;
         opt.spawn = pr.spawn;
         opt.heading = pr.heading;
+        if (const char* e = std::getenv("EDGES")) opt.edge_codes = std::atoi(e) != 0;
         auto map = thpskate::make_map(level, "thps", opt);
         auto loaded = Sim::load(vfs.value, "assets", &map, nullptr);
         if (loaded.is_err()) continue;
@@ -153,6 +154,7 @@ int main(int argc, char** argv) {
         sim->set_tuning(tt, 1.0f);
         std::vector<float> speed;
         V prev_v{};
+        bool wiped = false;
         bool prev_air = false;
         std::string event;
         float rise_grounded = 0.0f, rise_air = 0.0f;
@@ -190,6 +192,24 @@ int main(int argc, char** argv) {
                     std::printf("\n");
                     air_hits++;
                 }
+            }
+            // First bail of the run: what was the board touching? Nearest faces within 1.2 m of the board centre
+            // and of a point 1 m above it (the rider's body), with their normals.
+            if (r.wiping_out && !wiped) {
+                wiped = true;
+                const V q{b.position[0], b.position[1], b.position[2]};
+                const V w = thpskate::from_s3(q);
+                std::printf("BAIL probe %zu t%d at thps(%.0f %.0f %.0f) speed before %.2f -> %.2f :", i, t, w[0], w[1], w[2],
+                            speed.size() > 8 ? speed[speed.size() - 9] : 0.0f, speed.back());
+                for (float up : {0.0f, 1.0f}) {
+                    const V c{q[0], q[1] + up, q[2]};
+                    float best = 1e9f;
+                    const Tri* bt = nullptr;
+                    for (const auto& ct : tris)
+                        if (float d = tri_dist(ct, c); d < best) best = d, bt = &ct;
+                    if (bt) std::printf("  [%s] %.2f m n(%.2f %.2f %.2f)", up > 0 ? "body" : "board", best, bt->n[0], bt->n[1], bt->n[2]);
+                }
+                std::printf("\n");
             }
             prev_v = {v[0], v[1], v[2]};
             prev_air = air;

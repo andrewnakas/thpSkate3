@@ -51,6 +51,7 @@ inline std::array<float, 3> from_s3(const std::array<float, 3>& p, float units_p
 struct MapOptions {
     float units_per_metre = kUnitsPerMetre;
     bool two_sided = false;           // also add every triangle reversed
+    bool edge_codes = true;           // per-edge corner codes from geometric adjacency (see level.cpp)
     std::array<float, 3> spawn{};     // Skate 3 metres (wheel-ground anchor)
     float heading = 0.0f;             // radians about +Y
 };

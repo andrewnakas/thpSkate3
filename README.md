@@ -18,8 +18,9 @@ and the Skate 3 cleanroom pack.
 | Skater sounds: THPS's own rolling/grind/air loops (by surface) and ollie, push, landing and bail sounds, driven by Skate 3's state and events | `port/src/skate_bridge.cpp` |
 | Trainer menu (RT64 ImGui overlay) | `port/src/skate_trainer.cpp` |
 | Level collision, grind rails and restart points extracted from the ROM, with collision cleanup that keeps every surface where THPS draws it (seams welded, T-junctions repaired, floor mats
-and plates flattened so wheels roll over them, and walls standing on a quarter pipe's lip set back 20 cm above a
-30 cm vert so Skate 3 launches straight up off the coping instead of riding up the wall) | `tools/thps_level.py`, `src/skate/level.cpp` |
+and plates flattened so wheels roll over them, walls standing on a quarter pipe's lip made non-solid above a 30 cm
+vert so Skate 3 launches straight up off the coping instead of riding up the wall, and per-edge corner codes so
+seams between THPS's pieces don't catch the wheels) | `tools/thps_level.py`, `src/skate/level.cpp` |
 | Character rigs (bones, joints) for the retargeting | `tools/thps_skel.py` |
 | ROM asset pack reader | `tools/thps_pack.py` |
 
@@ -86,7 +87,8 @@ Shift+Home saves it), Display (Skate 3 camera, Skate 3 animation). Settings are 
 ## Debugging switches
 
 `THPS_SKATE=0` THPS's own skater · `THPS_SKATE_CAM=0` THPS's camera · `THPS_SKATE_POSE=0` THPS's animation · `THPS_SKATE_IK=0` no hand/foot IK · `THPS_SKATE_SOUND=0` no skater sounds ·
-`THPS_SKATE_LOG=1` log tricks, events and triggers · `THPS_SKATE_SCALE=units-per-metre` · F9 dumps RDRAM, F10 takes
+`THPS_SKATE_LOG=1` log tricks, events and triggers · `THPS_SKATE_CATCHES=0` no catch log (every bail or sudden stop is
+written to `~/.config/thpskate3/catches.log` with a screenshot) · `THPS_SKATE_EDGES=0` skatecore's own edge pairing · `THPS_SKATE_SCALE=units-per-metre` · F9 dumps RDRAM, F10 takes
 a screenshot · `tools/autorun.sh` / `tools/into_level.sh` run the game hidden with scripted input (`THPS_PRESS` for
 N64 buttons, `THPS_XPAD` for the Xbox pad, `THPS_LEVEL=n` to force a level, `THPS_SKATE_SPAWN=x,y,z,heading` to drop the skater somewhere).
 `work/skate_on_thps` (from `tools/native/skate_on_thps.cpp`) runs skatecore headless on a level cache;

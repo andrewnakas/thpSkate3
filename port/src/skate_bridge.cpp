@@ -326,6 +326,7 @@ bool spawn(Bridge& b, uint8_t* rdram, uint32_t sk, const std::string& level, con
     if (units <= 0.0f) units = b.units;
     thpskate::MapOptions opt;
     opt.units_per_metre = units;
+    if (const char* e = std::getenv("THPS_SKATE_EDGES")) opt.edge_codes = std::atoi(e) != 0;  // 0: skatecore's own edge pairing
     Vec3 p = skater_pos_units(rdram, sk);
     p[1] += kOriginHeight;
     opt.spawn = thpskate::to_s3(p, units);
@@ -683,6 +684,52 @@ void skater_sounds(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_
 
 }  // namespace
 
+// Catch recorder: every bail, and every sudden loss of over half the board's speed (from 4 m/s or more, in 3 ticks)
+// that is not a landing, is appended to ~/.config/thpskate3/catches.log with the level, the THPS position, speeds
+// and states, and the next frame is saved next to it as catches/catch_<n>.ppm. THPS_SKATE_CATCHES=0 turns it off.
+namespace RT64 { void RequestScreenshot(const char* path); }
+struct CatchRecorder {
+    std::array<float, 4> speed{};
+    std::array<std::string, 4> state;
+    int frames_since = 1000;
+    int count = 0;
+    bool enabled = [] { const char* e = std::getenv("THPS_SKATE_CATCHES"); return !e || std::atoi(e) != 0; }();
+};
+void record_catch(CatchRecorder& c, const std::string& level, float units, const s3::game::driver::TickRecord& r, bool bail) {
+    const auto& v = r.board.back().linear_velocity;
+    const float sp = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    for (size_t k = 3; k > 0; k--) {
+        c.speed[k] = c.speed[k - 1];
+        c.state[k] = c.state[k - 1];
+    }
+    c.speed[0] = sp;
+    c.state[0] = r.physical_state;
+    c.frames_since++;
+    if (!c.enabled || c.frames_since < 60) return;
+    bool landed = false;
+    for (const auto& e : r.events) landed = landed || e.rfind("LANDED", 0) == 0;
+    const bool stop = c.speed[3] > 4.0f && sp < 0.5f * c.speed[3] && !landed && c.state[3] != "PhysicsAir" && c.state[3] != "KnownAir";
+    if (!bail && !stop) return;
+    c.frames_since = 0;
+    const char* home = std::getenv("HOME");
+    const std::filesystem::path dir = home ? std::filesystem::path(home) / ".config" / "thpskate3" : std::filesystem::path(".");
+    std::error_code ec;
+    std::filesystem::create_directories(dir / "catches", ec);
+    const auto& p = r.board.back().position;
+    const auto t = thpskate::from_s3({p[0], p[1], p[2]}, units);
+    const auto& q = r.board.back().orientation;
+    const Vec3 f = quat_rotate(q, {0, 0, 1});
+    const int n = c.count++;
+    const std::string shot = (dir / "catches" / ("catch_" + std::to_string(n) + ".ppm")).string();
+    if (FILE* fp = std::fopen((dir / "catches.log").string().c_str(), "a")) {
+        std::fprintf(fp, "catch %d %s level=%s pos=%.0f,%.0f,%.0f heading=%.3f speed=%.2f->%.2f state=%s->%s units=%.0f shot=%s\n", n,
+                     bail ? "BAIL" : "STOP", level.c_str(), t[0], t[1], t[2], std::atan2(f[0], f[2]), c.speed[3], sp,
+                     c.state[3].c_str(), r.physical_state.c_str(), units, shot.c_str());
+        std::fclose(fp);
+    }
+    RT64::RequestScreenshot(shot.c_str());
+}
+
 // The run clock lives in the physics routine the bridge replaces (func_80059BEC): once the skater's end time (+0x428)
 // is behind the frame counter (D_800DE994) it plays the time-up sound and calls func_80082660, which raises
 // D_800DE9AC; func_80036664 then ends the run when the skater is on the ground (+0x82C == 0).
@@ -884,11 +931,14 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
         last = std::move(step.unwrap());
         static ComboState combo;
         score_events(b, rdram, ctx, sk, last, combo);
+        bool bailed = false;
         for (const std::string& e : last.events) {
             if (e == "AIRBORNE") cues.pop = true;
             else if (e.rfind("LANDED", 0) == 0) cues.land = true;
-            else if (e == "BAIL") cues.bail = true;
+            else if (e == "BAIL") cues.bail = bailed = true;
         }
+        static CatchRecorder catches;
+        record_catch(catches, level, b.units, last, bailed);
     }
     b.last = b.sim->presentation();
     b.have_presentation = true;

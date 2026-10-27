@@ -194,7 +194,7 @@ def export_all(packdir, outdir):
         tris, flat = flatten_low_steps(level_triangles(packdir, level))
         tris, lips = set_back_lip_walls(tris)
         tris, before, after = smooth_solids(tris)
-        print(f'{level}: {flat} low slab faces flattened, {lips} quarter-pipe lips set back from walls')
+        print(f'{level}: {flat} low slab faces flattened, {lips} quarter-pipe lips opened above the vert')
         write_cache(tris, object_keys(packdir, level), rails(packdir, level), restarts(packdir, level),
                     os.path.join(outdir, level + '.thl'))
         print(f'{level}: {len(tris)} triangles, open solid edges {before} -> {after}')
@@ -305,15 +305,14 @@ def _weld(points, eps):
     return rep, out
 
 
-def set_back_lip_walls(tris, depth=20.0, height=800.0, vert=30.0):
+def set_back_lip_walls(tris, height=800.0, vert=30.0):
     """Many THPS quarter pipes end against a solid wall standing right on the lip (Warehouse's building walls).
     THPS's own physics launches straight up at a vert lip; Skate 3 instead keeps its wheels on the wall and rides
-    up and along it. For collision only, the band of such a wall from the lip up to `height` units is moved back
-    by `depth` units behind a flat deck strip, so every lip is a convex coping edge Skate 3 launches from. Only quarter
-    pipes count (top face 65 degrees or steeper), and the bottom `vert` units of the wall stay where they are as a
-    vertical lip extension, so the skater leaves straight up as in THPS instead of drifting back into the wall. The
-    set-back is kept small: anything deeper lets the skater visibly into the wall.
-    tris: [(verts, face, obj)]. Returns (tris, number of lips set back)."""
+    up and along it. For collision only, the wall above such a lip is made non-solid from `vert` units above the lip
+    up to `height`: the bottom `vert` units stay as a vertical lip extension, so the skater leaves straight up as in
+    THPS. Nothing hidden is added (an earlier version moved the band back behind a small invisible deck, and boards
+    carving along the coping caught on that deck). Only level coping lines on 65+ degree quarter-pipe tops count.
+    tris: [(verts, face, obj)]. Returns (tris, number of lips opened)."""
     def sub(a, b): return [a[k] - b[k] for k in range(3)]
     def unit_normal(v):
         u, w = sub(v[1], v[0]), sub(v[2], v[0])
@@ -397,7 +396,6 @@ def set_back_lip_walls(tris, depth=20.0, height=800.0, vert=30.0):
         wn = norms[w]
         hw = math.hypot(wn[0], wn[2])
         t = (-wn[2] / hw, wn[0] / hw)
-        back = (-wn[0] / hw * depth, 0.0, -wn[2] / hw * depth)
         # merge boxes on the same lip height
         bl.sort()
         merged = []
@@ -420,24 +418,10 @@ def set_back_lip_walls(tris, depth=20.0, height=800.0, vert=30.0):
                     inside = clip(inside, c)
                     if not inside:
                         break
-                if inside:
-                    moved = [[p[j] + back[j] for j in range(3)] for p in inside]
-                    out += [(tri, face, obj) for tri in fan(moved)]
+                if inside:  # the band above the vert: kept for drawing-side bookkeeping but not solid
+                    out += [(tri, face | 0x10000, obj) for tri in fan(inside)]
             pieces = rest
             lips += 1
-            # the deck strip on top of the lip, facing up (-y)
-            d0 = (verts[0][0] * wn[0] + verts[0][2] * wn[2]) / hw  # horizontal offset of the wall line
-            nrm = (wn[0] / hw, wn[2] / hw)
-            def on_plane(u):
-                return [u * t[0] + d0 * nrm[0], yl, u * t[1] + d0 * nrm[1]]
-            A, B = on_plane(u0), on_plane(u1)
-            C = [B[j] + back[j] for j in range(3)]
-            D = [A[j] + back[j] for j in range(3)]
-            for tri in ([A, B, C], [A, C, D]):
-                n = unit_normal(tri)
-                if n and n[1] > 0:
-                    tri = [tri[0], tri[2], tri[1]]
-                out.append(([tuple(p) for p in tri], face, obj))
         out += [(tri, face, obj) for poly in pieces for tri in fan(poly)]
     return out, lips
 
