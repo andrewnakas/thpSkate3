@@ -305,13 +305,14 @@ def _weld(points, eps):
     return rep, out
 
 
-def set_back_lip_walls(tris, height=800.0, vert=30.0):
+def set_back_lip_walls(tris, height=100000.0, vert=30.0, margin=150.0, min_slope=50.0):
     """Many THPS quarter pipes end against a solid wall standing right on the lip (Warehouse's building walls).
     THPS's own physics launches straight up at a vert lip; Skate 3 instead keeps its wheels on the wall and rides
     up and along it. For collision only, the wall above such a lip is made non-solid from `vert` units above the lip
     up to `height`: the bottom `vert` units stay as a vertical lip extension, so the skater leaves straight up as in
     THPS. Nothing hidden is added (an earlier version moved the band back behind a small invisible deck, and boards
-    carving along the coping caught on that deck). Only level coping lines on 65+ degree quarter-pipe tops count.
+    carving along the coping caught on that deck). Only level coping lines on quarter-pipe tops of min_slope degrees
+    or more count; the opening runs the wall's full height and `margin` units past each end of the lip (corners).
     tris: [(verts, face, obj)]. Returns (tris, number of lips opened)."""
     def sub(a, b): return [a[k] - b[k] for k in range(3)]
     def unit_normal(v):
@@ -332,10 +333,11 @@ def set_back_lip_walls(tris, height=800.0, vert=30.0):
             for gz in range(int(math.floor(min(zs) / cell)), int(math.floor(max(zs) / cell)) + 1):
                 grid.setdefault((gx, gz), []).append(i)
 
-    boxes = {}  # wall index -> [(u0, u1, lip y)]
+    boxes = {}  # wall index -> [(u0, u1, band bottom y)]
+    lips_found = []  # ((wall normal, plane offset), u0, u1, band bottom y)
     for i in solid:
         n = norms[i]
-        if not n or not (0.01 < -n[1] < 0.42):  # quarter-pipe tops, 65..89 degrees, outward (up) side
+        if not n or not (0.01 < -n[1] < math.cos(math.radians(min_slope))):  # quarter-pipe tops, outward (up) side
             continue
         hn = math.hypot(n[0], n[2])
         hr = (n[0] / hn, n[2] / hn)
@@ -358,21 +360,27 @@ def set_back_lip_walls(tris, height=800.0, vert=30.0):
                 continue  # the wall must rise above the lip and reach down to it
             t = (-wn[2] / hw, wn[0] / hw)  # horizontal tangent of the wall
             ue = sorted([a[0] * t[0] + a[2] * t[1], b[0] * t[0] + b[2] * t[1]])
-            # where the wall triangle actually is, at the lip and at the top of the vert extension
-            u0, u1 = ue
-            for y in (yl, yl - vert):
-                us = []
-                for k in range(3):
-                    p, q = wv[k], wv[(k + 1) % 3]
-                    if (p[1] - y) * (q[1] - y) <= 0 and p[1] != q[1]:
-                        f = (y - p[1]) / (q[1] - p[1])
-                        us.append((p[0] + f * (q[0] - p[0])) * t[0] + (p[2] + f * (q[2] - p[2])) * t[1])
-                if len(us) < 2:
-                    u0, u1 = 1.0, 0.0
-                    break
-                u0, u1 = max(u0, min(us)), min(u1, max(us))
-            if u1 - u0 > 4.0:
-                boxes.setdefault(w, []).append((u0, u1, yl - vert))
+            plane = (wn, sum(wv[0][k] * wn[k] for k in range(3)))
+            lips_found.append((plane, ue[0] - margin, ue[1] + margin, yl - vert))
+            break
+    # Every solid wall triangle in a lip's wall plane gets that lip's box, not only the ones touching the lip: walls
+    # are quads split into two triangles, and the one that meets the lip at a single corner covers most of the wall
+    # above it.
+    for w in walls:
+        wn = norms[w]
+        wv = tris[w][0]
+        for (pn, pd), u0, u1, yb in lips_found:
+            if wn[0] * pn[0] + wn[1] * pn[1] + wn[2] * pn[2] < 0.99:
+                continue
+            if not all(abs(sum(p[k] * pn[k] for k in range(3)) - pd) < 4.0 for p in wv):
+                continue
+            if min(p[1] for p in wv) > yb or max(p[1] for p in wv) < yb - height:
+                continue
+            hw = math.hypot(pn[0], pn[2])
+            t = (-pn[2] / hw, pn[0] / hw)
+            uw = [p[0] * t[0] + p[2] * t[1] for p in wv]
+            if min(uw) < u1 and max(uw) > u0:
+                boxes.setdefault(w, []).append((u0, u1, yb))
 
     def clip(poly, f):  # keep the part with f(p) <= 0
         out = []
