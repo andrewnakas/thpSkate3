@@ -590,7 +590,9 @@ const std::map<std::string, std::string>& trick_names(const Bridge& b) {
         std::ifstream f(b.pack_path.parent_path() / "trick-names.tsv");
         for (std::string line; std::getline(f, line);) {
             const size_t tab = line.find('\t');
-            if (tab != std::string::npos) names[line.substr(0, tab)] = line.substr(tab + 1);
+            // Skate 3's table has a few unfinished entries ("FILL ME IN HAL"): leave those out.
+            if (tab != std::string::npos && line.find("FILL ME IN", tab) == std::string::npos)
+                names[line.substr(0, tab)] = line.substr(tab + 1);
         }
         std::fprintf(stderr, "[skate] %zu Skate 3 trick names\n", names.size());
     }
@@ -659,11 +661,35 @@ int segment_points(ComboState::Seg seg, const std::string& score_name, int ticks
 extern "C" void func_80045A70(uint8_t* rdram, recomp_context* ctx);
 constexpr uint32_t kComboList = 0xA1C, kComboEntries = 0x1F8, kComboCount = 0x388;
 
-// A TRICK event's id (OLLIE, HEELFLIP, FS_50_50) as a score name the table knows.
+// A trick id with the spelling differences between Skate 3's TRICK ids and its language table's keys taken out:
+// category prefixes, NOLLIE vs N_, NOSEGRIND vs NOSE, 5_O vs 5_0 and the underscores
+// (360FLIP ~ ID_TRICK_FLIP_360_FLIP, BS_5_O ~ GRIND_BS_5_0, N_POPSHUVIT ~ ID_TRICK_FLIP_NOLLIE_POP_SHUVIT).
+std::string trick_key(std::string k) {
+    for (const char* pre : {"ID_TRICK_", "#"})
+        if (k.rfind(pre, 0) == 0) k = k.substr(std::strlen(pre));
+    for (const char* pre : {"FLIP_", "GRIND_", "GRAB_", "GROUND_TRICK_", "FINGERFLIP_"})
+        if (k.rfind(pre, 0) == 0) { k = k.substr(std::strlen(pre)); break; }
+    if (k.rfind("NOLLIE_", 0) == 0) k = "N_" + k.substr(7);
+    auto swap_all = [&](const std::string& from, const std::string& to) {
+        for (size_t i = k.find(from); i != std::string::npos; i = k.find(from, i + to.size())) k.replace(i, from.size(), to);
+    };
+    swap_all("NOSEGRIND", "NOSE");
+    if (k.size() >= 2 && k.compare(k.size() - 2, 2, "_O") == 0) k[k.size() - 1] = '0';
+    swap_all("_O_", "_0_");
+    k.erase(std::remove(k.begin(), k.end(), '_'), k.end());
+    return k;
+}
+
+// A TRICK event's id (OLLIE, HEELFLIP, FS_50_50, 360FLIP) as a score name the table knows, or a tidied id.
 std::string trick_score_name(const Bridge& b, const std::string& id) {
     const auto& names = trick_names(b);
     for (const char* pre : {"ID_TRICK_FLIP_", "GRIND_", "ID_TRICK_GRAB_", "ID_TRICK_GROUND_TRICK_", "ID_TRICK_"})
         if (names.count(pre + id)) return std::string("#") + pre + id;
+    static std::map<std::string, std::string> by_key;  // the shortest table key for each spelling-free key
+    if (by_key.empty())
+        for (const auto& [k, v] : names)
+            if (auto [it, fresh] = by_key.try_emplace(trick_key(k), k); !fresh && k.size() < it->second.size()) it->second = k;
+    if (auto it = by_key.find(trick_key(id)); it != by_key.end()) return "#" + it->second;
     return "#ID_TRICK_" + id;
 }
 
