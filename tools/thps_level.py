@@ -102,18 +102,24 @@ def level_triangles(packdir, level, rail_lines=(), rail_reach=12.0):
     """Every level object's triangles in world space: [(verts, face word, object index)]. Walls, steep faces and
     ceilings THPS never draws are its invisible collision (walls up to the ceiling behind quarter pipes, level
     bounds) and are marked no-collision (0x10000), except the fins under its grind rails (a vertical face from the
-    ground up to the rail, within rail_reach units of a rail line: the drawn rail itself has no collision). Undrawn
+    ground up to the rail, within rail_reach units of a rail line and not above it: the drawn rail itself has no
+    collision; a wall rising above a rail that runs along a coping is not a fin). Undrawn
     floors stay solid (Warehouse's pit has one); trigger faces keep working."""
-    def near_rail(v):
+    def near_rail(v):  # every corner within rail_reach of a rail, sideways, and not above it
         for p in v:
-            best = float('inf')
+            ok = False
             for line in rail_lines:
                 for a, b in zip(line, line[1:]):
                     dx, dz = b[0] - a[0], b[2] - a[2]
                     ll = dx * dx + dz * dz
                     t = 0.0 if ll == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[2] - a[2]) * dz) / ll))
-                    best = min(best, math.hypot(p[0] - a[0] - t * dx, p[2] - a[2] - t * dz))
-            if best > rail_reach:
+                    y = a[1] + t * (b[1] - a[1])
+                    if math.hypot(p[0] - a[0] - t * dx, p[2] - a[2] - t * dz) <= rail_reach and p[1] >= y - rail_reach:
+                        ok = True
+                        break
+                if ok:
+                    break
+            if not ok:
                 return False
         return True
 
