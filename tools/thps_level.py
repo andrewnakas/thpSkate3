@@ -60,13 +60,14 @@ def mesh_triangles(m):
         while m[p] != 0:
             c = m[p]
             if c & 0x80:
+                # resolve the slots now: a later G_VTX in the same batch reloads them
                 a = (m[p] << 8) | m[p + 1]
                 p += 2
-                tris.append(((a >> 10) & 31, (a >> 5) & 31, a & 31))
+                tris.append((cache[(a >> 10) & 31], cache[(a >> 5) & 31], cache[a & 31]))
                 if m[p] & 0x80:
                     b = (m[p] << 8) | m[p + 1]
                     p += 2
-                    tris.append(((b >> 10) & 31, (b >> 5) & 31, b & 31))
+                    tris.append((cache[(b >> 10) & 31], cache[(b >> 5) & 31], cache[b & 31]))
             elif (c & 0x60) == 0x20:
                 a = (m[p] << 8) | m[p + 1]
                 p += 2
@@ -83,7 +84,7 @@ def mesh_triangles(m):
                 raise ValueError(f'bad display list byte {c:#x}')
         for t, (i0, i1, i2) in enumerate(tris):
             face = faces[t] if t < len(faces) else 0
-            out.append(((verts[cache[i0]], verts[cache[i1]], verts[cache[i2]]), face))
+            out.append(((verts[i0], verts[i1], verts[i2]), face))
     return out
 
 

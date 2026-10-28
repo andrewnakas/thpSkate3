@@ -178,6 +178,11 @@ struct Bridge {
     uint16_t session_buttons = 0;              // pad buttons last frame (session marker edges)
     int bail_timer = 0;                        // frames until auto-return after a bail
     std::array<float, 4> last_deck{0, 0, 0, 1};
+    // Out-of-world rescue: the last place the skater rolled on a floor, and how long it has had nothing under it.
+    bool have_safe = false;
+    Vec3 safe_pos{};
+    float safe_heading = 0.0f;
+    int void_frames = 0;
     std::string geo_level;
     // A world being rebuilt in the background (skater size, session marker): see spawn().
     std::future<s3::rs::Result<std::unique_ptr<Sim>, std::string>> build;
@@ -309,6 +314,8 @@ bool finish_spawn(Bridge& b, SimLoad loaded, const std::string& level, uint32_t 
         b.triggers.push_back({{t.v[0], t.v[1], t.v[2]}, geo.object_keys[t.object]});
     }
     b.have_prev = false;
+    if (level != b.level) b.have_safe = false;
+    b.void_frames = 0;
     b.level = level;
     b.skater = sk;
     b.have_written = false;
@@ -860,6 +867,25 @@ int ground_terrain(const Bridge& b, const Vec3& at) {
     return terrain;
 }
 
+// Whether any solid, non-vertical face lies under `at` (THPS units) at or below its height: the out-of-world test.
+bool floor_under(const Bridge& b, const Vec3& at) {
+    for (const auto& t : b.geo.tris) {
+        if (!t.solid()) continue;
+        if (std::max({t.v[0][1], t.v[1][1], t.v[2][1]}) < at[1] - 60.0f) continue;  // all above (PSX y points down)
+        if (std::min({t.v[0][0], t.v[1][0], t.v[2][0]}) > at[0] || std::max({t.v[0][0], t.v[1][0], t.v[2][0]}) < at[0]) continue;
+        if (std::min({t.v[0][2], t.v[1][2], t.v[2][2]}) > at[2] || std::max({t.v[0][2], t.v[1][2], t.v[2][2]}) < at[2]) continue;
+        const float x0 = t.v[0][0], z0 = t.v[0][2];
+        const float ax = t.v[1][0] - x0, az = t.v[1][2] - z0, bx = t.v[2][0] - x0, bz = t.v[2][2] - z0;
+        const float det = ax * bz - az * bx;
+        if (std::fabs(det) < 1e-4f) continue;  // vertical
+        const float u = ((at[0] - x0) * bz - (at[2] - z0) * bx) / det;
+        const float v = (ax * (at[2] - z0) - az * (at[0] - x0)) / det;
+        if (u < 0.0f || v < 0.0f || u + v > 1.0f) continue;
+        if (t.v[0][1] + u * (t.v[1][1] - t.v[0][1]) + v * (t.v[2][1] - t.v[0][1]) >= at[1] - 60.0f) return true;
+    }
+    return false;
+}
+
 void skater_sounds(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t sk, const SoundCues& cues) {
     static const bool off = std::getenv("THPS_SKATE_SOUND") && *std::getenv("THPS_SKATE_SOUND") == '0';
     if (off) return;
@@ -1125,6 +1151,7 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
     b.tick_accumulator -= float(ticks);
     s3::game::driver::TickRecord last{};
     SoundCues cues;
+    static ComboState combo;
     if (ticks == 0) return 1;  // slow motion: nothing to step this frame (THPS keeps the last pose)
     for (int i = 0; i < ticks; i++) {
         auto step = b.sim->step(pad);
@@ -1134,7 +1161,6 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
             return 1;
         }
         last = std::move(step.unwrap());
-        static ComboState combo;
         score_events(b, rdram, ctx, sk, last, combo);
         bool bailed = false;
         for (const std::string& e : last.events) {
@@ -1166,6 +1192,43 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
         st.trick = b.last_trick;
         st.level = level;
         thps::trainer::set_status(st);
+    }
+    // Out of the world (THPS never lets the skater leave its level; Skate 3 can, e.g. drifting back over a
+    // quarter pipe's opened lip wall at a level edge): nothing under the skater for 20 frames puts it back where it
+    // last rolled on a floor, and the combo is lost as in a bail.
+    {
+        const Vec3 at = skater_pos_units(rdram, sk);
+        if (!floor_under(b, at)) {
+            b.void_frames++;
+        } else {
+            b.void_frames = 0;
+            if (last.grounded && !last.wiping_out && last.physical_state == "PhysicsGround") {
+                b.have_safe = true;
+                b.safe_pos = at;
+                const Vec3 f = quat_rotate(b.last_deck, {0, 0, 1});
+                b.safe_heading = std::atan2(f[0], f[2]);
+            }
+        }
+        if (b.void_frames >= 20 && !b.have_safe && !b.geo.restarts.empty()) {  // nowhere rolled yet: the level start
+            const auto& r = b.geo.restarts.front();
+            b.have_safe = true;
+            b.safe_pos = {r.pos[0], r.pos[1], r.pos[2]};
+            b.safe_heading = -float(r.angle) * 6.2831853f / 4096.0f;
+        }
+        if (b.void_frames >= 20 && b.have_safe) {
+            std::fprintf(stderr, "[skate] out of the world at (%.0f %.0f %.0f): back to (%.0f %.0f %.0f)\n", at[0], at[1], at[2],
+                         b.safe_pos[0], b.safe_pos[1], b.safe_pos[2]);
+            if (s32(rdram, sk + 0x858) != 0) call_game(func_8004CED0, rdram, ctx, sk);
+            combo = ComboState{};
+            for (int i = 0; i < 3; i++)
+                w32(rdram, sk + 4 + 4 * uint32_t(i), uint32_t(int32_t(std::lround(double(b.safe_pos[size_t(i)]) * 4096.0))));
+            const float heading = b.safe_heading;
+            if (!spawn(b, rdram, sk, level, &heading, true)) {
+                b.failed = true;
+                return 0;
+            }
+            return 1;
+        }
     }
     run_triggers(b, rdram, ctx, skater_pos_units(rdram, sk));
     // THPS_SKATE_GAPTEST="start,end" (hex keys, testing): ~3 s after a spawn, run a combo through those two

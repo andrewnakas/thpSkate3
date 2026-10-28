@@ -97,6 +97,9 @@ combo's total is multiplied by the number of tricks when you roll away. A bail l
 the longer you hold them, each 180 of spin and every frontflip or backflip add to a trick, and repeating a trick in
 one combo is worth less each time.
 
+If the skater ever gets out of a level (nothing under it for two thirds of a second), it is put back where it last
+rolled and the combo is lost, as in a bail.
+
 Session markers, as in Skate 3: **LB + d-pad down** sets a session marker, **LB + d-pad up** goes back to it, **LB +
 d-pad left/right** switches between the trainer's five marker slots (the selected slot is the session marker). The
 Practice tab can also return you there automatically after a bail.
@@ -117,4 +120,5 @@ a screenshot · `tools/autorun.sh` / `tools/into_level.sh` run the game hidden w
 N64 buttons, `THPS_XPAD` for the Xbox pad, `THPS_LEVEL=n` to force a level, `THPS_SKATE_SPAWN=x,y,z,heading` to drop the skater somewhere).
 `work/skate_on_thps` (from `tools/native/skate_on_thps.cpp`) runs skatecore headless on a level cache;
 `work/wall_probe` (`tools/native/wall_probe.cpp`) rides up every ramp of a level cache and reports where the skater
-is stopped, wipes out or never gets air.
+is stopped, wipes out or never gets air. `work/fall_probe` (`tools/native/fall_probe.cpp`) rides all over a level
+cache with pushes and ollies and reports where the board passes down through a floor or ends up with nothing under it.
