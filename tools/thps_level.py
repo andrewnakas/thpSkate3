@@ -306,7 +306,7 @@ def _weld(points, eps):
     return rep, out
 
 
-def set_back_lip_walls(tris, height=100000.0, vert=30.0, margin=150.0, min_slope=50.0):
+def set_back_lip_walls(tris, height=100000.0, vert=30.0, margin=150.0, min_slope=50.0, steep=80.0):
     """Many THPS quarter pipes end against a solid wall standing right on the lip (Warehouse's building walls).
     THPS's own physics launches straight up at a vert lip; Skate 3 instead keeps its wheels on the wall and rides
     up and along it. For collision only, the wall above such a lip is made non-solid from `vert` units above the lip
@@ -314,6 +314,9 @@ def set_back_lip_walls(tris, height=100000.0, vert=30.0, margin=150.0, min_slope
     THPS. Nothing hidden is added (an earlier version moved the band back behind a small invisible deck, and boards
     carving along the coping caught on that deck). Only level coping lines on quarter-pipe tops of min_slope degrees
     or more count; the opening runs the wall's full height and `margin` units past each end of the lip (corners).
+    A lip under `steep` degrees (School's 60-degree quarter pipes) keeps its wall: there the vertical band would stand
+    across the board's path like a step, and the wall itself catches the board better than any opening (wall_probe:
+    School 63 -> 32 ramp hits).
     tris: [(verts, face, obj)]. Returns (tris, number of lips opened)."""
     def sub(a, b): return [a[k] - b[k] for k in range(3)]
     def unit_normal(v):
@@ -348,6 +351,8 @@ def set_back_lip_walls(tris, height=100000.0, vert=30.0, margin=150.0, min_slope
         if span < 8.0 or abs(a[1] - b[1]) > 0.03 * span + 1.0:  # a level coping line only
             continue
         yl = min(a[1], b[1])
+        if math.degrees(math.acos(max(-1.0, min(1.0, -n[1])))) < steep:
+            continue  # a shallow lip keeps its wall
         mx, mz = (a[0] + b[0]) / 2, (a[2] + b[2]) / 2
         for w in grid.get((int(math.floor(mx / cell)), int(math.floor(mz / cell))), []):
             wn = norms[w]
