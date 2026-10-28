@@ -659,6 +659,14 @@ int segment_points(ComboState::Seg seg, const std::string& score_name, int ticks
 extern "C" void func_80045A70(uint8_t* rdram, recomp_context* ctx);
 constexpr uint32_t kComboList = 0xA1C, kComboEntries = 0x1F8, kComboCount = 0x388;
 
+// A TRICK event's id (OLLIE, HEELFLIP, FS_50_50) as a score name the table knows.
+std::string trick_score_name(const Bridge& b, const std::string& id) {
+    const auto& names = trick_names(b);
+    for (const char* pre : {"ID_TRICK_FLIP_", "GRIND_", "ID_TRICK_GRAB_", "ID_TRICK_GROUND_TRICK_", "ID_TRICK_"})
+        if (names.count(pre + id)) return std::string("#") + pre + id;
+    return "#ID_TRICK_" + id;
+}
+
 ComboState::Seg name_kind(const std::string& n) {
     using Seg = ComboState::Seg;
     if (n.find("GRIND") != std::string::npos || n.find("SLIDE") != std::string::npos) return Seg::Grind;
@@ -674,9 +682,14 @@ void score_events(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t
     auto combo_active = [&] { return s32(rdram, sk + 0x858) != 0; };
     const uint32_t list = sk + kComboList;
     bool bailed = false;
+    std::string performed;  // a trick performed this tick (TRICK fires for every trick, a repeat of the last too)
     for (const std::string& e : r.events) {
         if (log && e.rfind("CONTACT", 0) != 0 && e.rfind("CLIP:", 0) != 0) std::fprintf(stderr, "[skate] event %s\n", e.c_str());
         if (e == "BAIL") bailed = true;
+        if (e.rfind("TRICK:", 0) == 0) {
+            performed = trick_score_name(b, e.substr(6));
+            if (!log) std::fprintf(stderr, "[skate] trick %s -> %s\n", e.c_str() + 6, performed.c_str());
+        }
     }
     const std::string& st = r.physical_state;
     Seg now = Seg::None;
@@ -695,22 +708,25 @@ void score_events(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t
 
     if (bailed) {
         if (combo_active()) call_game(func_8004CED0, rdram, ctx, sk);
-        if (log && cs.in_combo) std::fprintf(stderr, "[skate] combo lost\n");
+        if (cs.in_combo) std::fprintf(stderr, "[skate] combo lost\n");
         const std::string shown = r.score_name;
         cs = ComboState{};
         cs.announced = shown;
         return;
     }
-    // Names announced this tick: only those belong to what the skater is doing now.
-    const bool fresh = r.score_name != cs.announced && !r.score_name.empty();
+    // What the skater is doing gets named by two signals: a TRICK event (every trick, repeats included; its id
+    // gives the base name) and Skate 3's displayed score name, which it only re-announces when it changes and
+    // which adds the spin and body flips ("... 360 BACKFLIP"). Either can arrive a tick before the air or grind
+    // state starts, so it waits as pending for the segment it belongs to.
+    std::string announced;
+    if (!performed.empty()) announced = performed;
+    if (r.score_name != cs.announced && !r.score_name.empty() && r.score_name != "#ID_TRICK_AIR") announced = r.score_name;
     cs.announced = r.score_name;
     cs.pending_age++;
-    if (fresh) {
-        const Seg kind = name_kind(r.score_name);
-        if (kind == now && now != Seg::None) {
-            if (r.score_name != "#ID_TRICK_AIR" || cs.name.empty()) cs.name = r.score_name;
-        } else if (r.score_name != "#ID_TRICK_AIR") {
-            cs.pending = r.score_name;  // a flip's name on the take-off tick, a grind's a tick before the grind
+    if (!announced.empty()) {
+        if (name_kind(announced) == now && now != Seg::None) cs.name = announced;
+        else {
+            cs.pending = announced;
             cs.pending_age = 0;
         }
     }
@@ -734,7 +750,7 @@ void score_events(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t
                 w32(rdram, sk + 0x420, 0);
                 call_game(func_8004CC10, rdram, ctx, sk);
             }
-            if (log) std::fprintf(stderr, "[skate] combo banked\n");
+            std::fprintf(stderr, "[skate] combo banked\n");
             cs.in_combo = false;
         }
         return;
@@ -762,7 +778,7 @@ void score_events(Bridge& b, uint8_t* rdram, const recomp_context* ctx, uint32_t
         cs.shown = name;
         cs.shown_points = pts;
         cs.in_combo = true;
-        if (log) std::fprintf(stderr, "[skate] + %s (%d)\n", name.c_str(), stored);
+        std::fprintf(stderr, "[skate] + %s (%d)\n", name.c_str(), stored);
         return;
     }
     if (name == cs.shown && pts == cs.shown_points) return;
