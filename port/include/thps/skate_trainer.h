@@ -7,16 +7,18 @@
 namespace thps::trainer {
 
 struct Settings {
-    // skatecore TrainerTuning (skate-mods schema): multipliers on the stock values.
-    float pop = 1.0f;
-    float grind_pop = 1.0f;
-    float push_speed = 1.0f;
-    float push_power = 1.0f;
+    // skatecore TrainerTuning (skate-mods schema): multipliers on the stock values. The defaults are the tuning
+    // thpSkate3 is played with (higher pop and push, more grip and off-board jump, a 1.5x skater); the Stock preset
+    // gives Skate 3's own values.
+    float pop = 1.5f;
+    float grind_pop = 1.48f;
+    float push_speed = 2.09f;
+    float push_power = 2.07f;
     float braking = 1.0f;
     float steering = 1.0f;
     float wobble = 1.0f;
-    float offboard_jump = 1.0f;
-    float grip = 1.0f;
+    float offboard_jump = 2.11f;
+    float grip = 1.22f;
     float turn_power = 1.0f;
     float manual_drag = 1.0f;
     bool hold_fakie = false;
@@ -24,7 +26,7 @@ struct Settings {
     float game_speed = 1.0f;    // simulation speed (0.05 .. 2): slow motion below 1
     // Skater size against THPS's world (THPS levels are built bigger than Skate 3's): the Skate 3 skater, board,
     // pops and speeds and the THPS character all scale by it.
-    float skater_size = 1.25f;
+    float skater_size = 1.5f;
     bool auto_return = false;   // after a bail, go back to the session marker (the selected slot)
     bool skate3_camera = true;  // Skate 3's camera (else THPS's)
     bool skate3_pose = true;    // Skate 3 animation on the THPS character (else THPS's own animation)

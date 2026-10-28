@@ -88,8 +88,9 @@ d-pad left/right** switches between the trainer's five marker slots (the selecte
 Practice tab can also return you there automatically after a bail.
 
 The trainer: **Insert** or **Back + LB + RB**. Tabs: Tuning (pop, grind pop, push speed/power, braking, steering,
-wobble, off-board jump, grip, turn power, manual drag, gravity, skater size, hold fakie), Presets (Stock, Mega Pop, Fast,
-Moon, Giant, THPS, Realistic, Slow-mo; they stack), Practice (game speed, five marker slots: Home goes to the selected slot,
+wobble, off-board jump, grip, turn power, manual drag, gravity, skater size, hold fakie), Presets (Default, Stock, Mega Pop, Fast,
+Moon, Giant, THPS, Realistic, Slow-mo; they stack; Default is the tuning thpSkate3 starts with -- pop x1.5,
+push x2, grip x1.22, off-board jump x2.1, a 1.5x skater -- and Stock is Skate 3's own values), Practice (game speed, five marker slots: Home goes to the selected slot,
 Shift+Home saves it), Display (Skate 3 camera, Skate 3 animation). Settings are saved in
 `~/.config/thpskate3/trainer.ini`.
 

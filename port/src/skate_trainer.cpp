@@ -86,7 +86,13 @@ void load() {
 
 struct Preset { const char* name; const char* help; void (*apply)(Settings&); };
 const Preset kPresets[] = {
-    {"Stock", "Everything back to Skate 3's own values", [](Settings& s) { s = Settings{}; }},
+    {"Default", "thpSkate3's own tuning (the settings it starts with)", [](Settings& s) { s = Settings{}; }},
+    {"Stock", "Skate 3's own values: every tuning multiplier at 1 (skater size and display kept)",
+     [](Settings& s) {
+         s.pop = s.grind_pop = s.push_speed = s.push_power = s.braking = s.steering = s.wobble = 1.0f;
+         s.offboard_jump = s.grip = s.turn_power = s.manual_drag = s.gravity = s.game_speed = 1.0f;
+         s.hold_fakie = false;
+     }},
     {"Mega Pop", "Every pop x3", [](Settings& s) { s.pop = 3.0f; s.grind_pop = 3.0f; }},
     {"Fast", "Push top speed and power x3", [](Settings& s) { s.push_speed = 3.0f; s.push_power = 3.0f; }},
     {"Moon", "Gravity x0.4", [](Settings& s) { s.gravity = 0.4f; }},
@@ -141,7 +147,7 @@ void draw() {
                     ImGui::SameLine();
                     ImGui::TextUnformatted(p.help);
                 }
-                ImGui::TextDisabled("Presets stack (except Stock).");
+                ImGui::TextDisabled("Presets stack (except Default and Stock).");
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Practice")) {
