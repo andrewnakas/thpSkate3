@@ -27,7 +27,21 @@ seams between THPS's pieces don't catch the wheels) | `tools/thps_level.py`, `sr
 THPS facts the bridge relies on (scale ~100 units per metre, face flags, trigger brackets, the rig) are noted in the
 source comments.
 
-## Setup (Linux)
+## Quick start (Linux release)
+
+**Prerelease: early and glitchy.** Download `thpSkate3-<version>-linux-x86_64.tar.gz` from the releases, unpack it,
+and set it up once from your own games (Python 3, curl and [uv](https://docs.astral.sh/uv/) needed; about 2 GB of
+free space while the Skate 3 data converts):
+
+```sh
+tools/setup.sh "Tony Hawk's Pro Skater (U) (V1.1).z64" "Skate 3.iso"   # THPS N64 US V1.1 ROM, Xbox 360 Skate 3 ISO
+./thpskate3
+```
+
+It needs a Vulkan GPU and an Xbox 360 controller. The build targets current Linux (built on Ubuntu with glibc 2.43);
+on older systems build it from source.
+
+## Setup (Linux, from source)
 
 Needs clang (tested with clang 20), cmake, ninja, Python 3 (with Pillow for the test tools), SDL2 2.32 development
 files, a Vulkan GPU, and a checkout of the [THPS64 decomp](https://github.com/andrewnakas/thps64) (for its ERZ

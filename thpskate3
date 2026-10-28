@@ -1,0 +1,6 @@
+#!/bin/sh
+# Start thpSkate3 (run tools/setup.sh THPS.z64 SKATE3.iso once first).
+DIR=$(cd "$(dirname "$0")" && pwd)
+[ -f "$DIR/work/thps.z64" ] || { echo "Run tools/setup.sh THPS.z64 SKATE3.iso first."; exit 1; }
+LD_LIBRARY_PATH="$DIR/lib:$DIR/deps/prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    exec "$DIR/port/build/THPS64Recomp" "$DIR/work/thps.z64" "$@"
