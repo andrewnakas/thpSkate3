@@ -18,7 +18,8 @@ and your own Xbox 360 Skate 3 disc image.
 | Skater sounds: THPS's own rolling/grind/air loops (by surface) and ollie, push, landing and bail sounds, driven by Skate 3's state and events | `port/src/skate_bridge.cpp` |
 | Trainer menu (RT64 ImGui overlay) | `port/src/skate_trainer.cpp` |
 | Level collision, grind rails and restart points extracted from the ROM: the surfaces THPS draws, where it draws
-them (its invisible walls, such as the ones up to the ceiling behind quarter pipes, are left out; seams welded,
+them (its invisible walls, such as the ones up to the ceiling behind quarter pipes, are left out, except the thin
+fins its grind rails sit on; seams welded,
 T-junctions repaired, floor mats and plates flattened so wheels roll over them, per-edge corner codes so seams
 between THPS's pieces don't catch the wheels), plus a grind rail along every quarter-pipe coping | `tools/thps_level.py`, `src/skate/level.cpp` |
 | Character rigs (bones, joints) for the retargeting | `tools/thps_skel.py` |
@@ -87,6 +88,9 @@ cd build && ./THPS64Recomp ../../work/thps.z64
 back to their decomp sizes (the camera FOV setup and parts of the music library; see `thps.syms.toml.orig`).
 
 ## Controls (Xbox 360 pad)
+
+Quarter pipes launch the THPS way: off any ramp of 49 degrees or more the speed that would carry you out over the
+coping goes straight up instead, so you come back down into the ramp (THPS's quarter pipes top out at 50-56 degrees).
 
 Skating is Skate 3's: left stick steers/leans, A pushes, the right stick flicks tricks (down then up = ollie),
 triggers grab, Y gets off the board. Start opens THPS's pause menu.

@@ -116,8 +116,10 @@ int main(int argc, char** argv) {
     struct Probe { V spawn; float heading; V ramp; };
     std::vector<Probe> probes;
     std::map<std::tuple<int, int, int, int>, bool> seen;
+    // RAMPMAXNY=0.71: only ramps of 45 degrees or more (quarter-pipe tops)
+    const float ramp_max_ny = std::getenv("RAMPMAXNY") ? std::strtof(std::getenv("RAMPMAXNY"), nullptr) : 0.87f;
     for (const auto& t : tris) {
-        if (t.n[1] < 0.34f || t.n[1] > 0.87f) continue;
+        if (t.n[1] < 0.34f || t.n[1] > ramp_max_ny) continue;
         const V c{(t.p[0][0] + t.p[1][0] + t.p[2][0]) / 3, (t.p[0][1] + t.p[1][1] + t.p[2][1]) / 3,
                   (t.p[0][2] + t.p[1][2] + t.p[2][2]) / 3};
         const float h = std::hypot(t.n[0], t.n[2]);
@@ -141,6 +143,7 @@ int main(int argc, char** argv) {
     tt.push_power = boost;
     int air_hits = 0;
     int hits = 0;
+    int flown = 0;  // runs that ended up over 2.5 m past the ramp centre, uphill: flew out over the coping
     for (size_t i = 0; i < probes.size(); i++) {
         const auto& pr = probes[i];
         thpskate::MapOptions opt;
@@ -152,7 +155,11 @@ int main(int argc, char** argv) {
         if (loaded.is_err()) continue;
         auto sim = std::move(loaded.unwrap());
         sim->set_tuning(tt, 1.0f);
+        // VERTY=n: Skate 3's vert-launch threshold (stock 0.2); default thpSkate3's
+        sim->set_thps_vert(std::getenv("VERTY") ? std::strtof(std::getenv("VERTY"), nullptr)
+                                                                     : thpskate::kThpsVertMaxNormalY);
         std::vector<float> speed;
+        float out_far = -1e9f;      // furthest the board got past the ramp, uphill (m)
         V prev_v{};
         bool wiped = false;
         bool prev_air = false;
@@ -167,6 +174,10 @@ int main(int argc, char** argv) {
             if (step.is_err()) { event = "step error"; break; }
             const auto& r = step.unwrap();
             const auto& b = r.board.back();
+            {
+                const float ux = std::sin(pr.heading), uz = std::cos(pr.heading);
+                out_far = std::max(out_far, (b.position[0] - pr.ramp[0]) * ux + (b.position[2] - pr.ramp[2]) * uz);
+            }
             const auto& v = b.linear_velocity;
             speed.push_back(std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
             // In the air only gravity should act: a horizontal kick of over 0.8 m/s, or the board stopping while
@@ -257,6 +268,10 @@ int main(int argc, char** argv) {
             for (auto& [k, v] : states) std::printf(" %s=%d", k.c_str(), v);
             std::printf("\n");
         }
+        if (out_far > 2.5f) {
+            flown++;
+            if (std::getenv("FLOWN")) std::printf("FLOWN probe %zu ramp %.1f %.1f %.1f past %.1f m\n", i, pr.ramp[0], pr.ramp[1], pr.ramp[2], out_far);
+        }
         if (event.empty()) continue;
         hits++;
         const V s = thpskate::from_s3(pr.spawn), w = thpskate::from_s3(where), c = thpskate::from_s3(pr.ramp);
@@ -265,6 +280,7 @@ int main(int argc, char** argv) {
                     *std::max_element(speed.begin(), speed.end()));
         std::fflush(stdout);
     }
-    std::printf("%s: %d hits of %zu probes, %d phantom-surface ticks, %d air hits\n", argv[2], hits, probes.size(), phantom_total, air_hits);
+    std::printf("%s: %d hits of %zu probes, %d phantom-surface ticks, %d air hits, %d flew out\n", argv[2], hits, probes.size(),
+                phantom_total, air_hits, flown);
     return 0;
 }

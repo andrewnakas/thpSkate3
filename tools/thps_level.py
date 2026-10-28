@@ -47,10 +47,8 @@ def _up(a, b, c):
 
 
 def mesh_triangles(m):
-    """Triangles of one mesh: list of ((v0, v1, v2) model-space s16 tuples, face word). Walls, steep faces and
-    ceilings of batches the game never draws (batch flag 0x800: THPS's invisible collision walls, up to the ceiling
-    behind quarter pipes) are marked no-collision (0x10000). Its undrawn floors stay solid (Warehouse's pit has
-    one), and trigger faces keep working."""
+    """Triangles of one mesh: list of ((v0, v1, v2) model-space s16 tuples, face word, undrawn). `undrawn`: the
+    triangle's batch has flag 0x800, which the game never draws (func_800B6B80 skips it)."""
     parts = container(m)
     vstart, _ = parts[2]
     nverts = struct.unpack_from('>I', m, vstart)[0]
@@ -96,13 +94,29 @@ def mesh_triangles(m):
                 raise ValueError(f'bad display list byte {c:#x}')
         for t, (i0, i1, i2) in enumerate(tris):
             face = faces[t] if t < len(faces) else 0
-            if hdr[1] & 0x800 and not face & 0x20000 and _up(verts[i0], verts[i1], verts[i2]) < 0.5:
-                face |= 0x10000  # a wall in a batch the game never draws (func_800B6B80): invisible, not solid
-            out.append(((verts[i0], verts[i1], verts[i2]), face))
+            out.append(((verts[i0], verts[i1], verts[i2]), face, bool(hdr[1] & 0x800)))
     return out
 
 
-def level_triangles(packdir, level):
+def level_triangles(packdir, level, rail_lines=(), rail_reach=12.0):
+    """Every level object's triangles in world space: [(verts, face word, object index)]. Walls, steep faces and
+    ceilings THPS never draws are its invisible collision (walls up to the ceiling behind quarter pipes, level
+    bounds) and are marked no-collision (0x10000), except the fins under its grind rails (a vertical face from the
+    ground up to the rail, within rail_reach units of a rail line: the drawn rail itself has no collision). Undrawn
+    floors stay solid (Warehouse's pit has one); trigger faces keep working."""
+    def near_rail(v):
+        for p in v:
+            best = float('inf')
+            for line in rail_lines:
+                for a, b in zip(line, line[1:]):
+                    dx, dz = b[0] - a[0], b[2] - a[2]
+                    ll = dx * dx + dz * dz
+                    t = 0.0 if ll == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[2] - a[2]) * dz) / ll))
+                    best = min(best, math.hypot(p[0] - a[0] - t * dx, p[2] - a[2] - t * dz))
+            if best > rail_reach:
+                return False
+        return True
+
     sec0 = tp.directory(open(os.path.join(packdir, 'sec0.bin'), 'rb').read())
     sec2 = tp.directory(open(os.path.join(packdir, 'sec2.bin'), 'rb').read())
     lf = sec0[LEVEL_PSX_INDEX[level]]
@@ -124,8 +138,11 @@ def level_triangles(packdir, level):
             a, b = meshes[model]
             cache[model] = mesh_triangles(pack[a:b])
         ox, oy, oz = px / 4096.0, py / 4096.0, pz / 4096.0
-        for (v0, v1, v2), face in cache[model]:
-            tris.append((tuple((v[0] + ox, v[1] + oy, v[2] + oz) for v in (v0, v1, v2)), face, i))
+        for (v0, v1, v2), face, undrawn in cache[model]:
+            v = tuple((p[0] + ox, p[1] + oy, p[2] + oz) for p in (v0, v1, v2))
+            if undrawn and not face & 0x20000 and _up(*v) < 0.5 and not near_rail(v):
+                face |= 0x10000
+            tris.append((v, face, i))
     return tris
 
 
@@ -206,12 +223,13 @@ def write_cache(tris, keys, rail_lines, restart_points, path):
 def export_all(packdir, outdir):
     os.makedirs(outdir, exist_ok=True)
     for level in LEVEL_PSX_INDEX:
-        tris, flat = flatten_low_steps(level_triangles(packdir, level))
+        own = rails(packdir, level)
+        tris, flat = flatten_low_steps(level_triangles(packdir, level, own))
         tris, before, after = smooth_solids(tris)
         print(f'{level}: {flat} low slab faces flattened')
         copings = coping_rails(tris)
         print(f'{level}: {len(copings)} coping rails')
-        write_cache(tris, object_keys(packdir, level), rails(packdir, level) + copings, restarts(packdir, level),
+        write_cache(tris, object_keys(packdir, level), own + copings, restarts(packdir, level),
                     os.path.join(outdir, level + '.thl'))
         print(f'{level}: {len(tris)} triangles, open solid edges {before} -> {after}')
 

@@ -141,7 +141,11 @@ int main(int argc, char** argv) {
         if (loaded.is_err()) continue;
         auto sim = std::move(loaded.unwrap());
         sim->set_tuning(tt, 1.0f);
+        // VERTY=n: Skate 3's vert-launch threshold (stock 0.2); default thpSkate3's
+        sim->set_thps_vert(std::getenv("VERTY") ? std::strtof(std::getenv("VERTY"), nullptr)
+                                                                     : thpskate::kThpsVertMaxNormalY);
         std::optional<V> prev;
+
         V vprev{};
         std::string sprev;
         for (int t = 0; t < 600; t++) {

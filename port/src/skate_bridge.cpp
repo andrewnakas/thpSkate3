@@ -1080,6 +1080,7 @@ extern "C" int thps_skate_physics(uint8_t* rdram, recomp_context* ctx) {
         t.manual_drag = ts.manual_drag;
         t.hold_fakie = ts.hold_fakie;
         b.sim->set_tuning(t, ts.gravity);
+        b.sim->set_thps_vert(thpskate::kThpsVertMaxNormalY);  // THPS's quarter pipes launch straight up
         b.applied = ts;
         b.tuning_applied = true;
     }

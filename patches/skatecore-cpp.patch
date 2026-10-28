@@ -1,5 +1,51 @@
+diff --git a/src/s3/core/air/trajectory/launch.cpp b/src/s3/core/air/trajectory/launch.cpp
+index 2c61cb0..5c042b1 100644
+--- a/src/s3/core/air/trajectory/launch.cpp
++++ b/src/s3/core/air/trajectory/launch.cpp
+@@ -2,6 +2,7 @@
+ #include "s3/core/air/trajectory/launch.hpp"
+ 
+ #include <algorithm>
++#include <cmath>
+ 
+ #include "s3/core/trigonometry.hpp"
+ 
+@@ -11,6 +12,18 @@ using namespace trajectory::math;
+ 
+ bool adjust_velocity(LaunchInfo& info, SelectorInput input, const SelectorSettings& s) {
+     const Vector n = input.ground_normal;
++    if (n[1] > 0.02f && n[1] < s.thps_vert_max_ground_normal_y) {  // thpSkate3: THPS vert
++        const float h = std::sqrt(n[0] * n[0] + n[2] * n[2]);
++        Vector v = info.start_velocity;
++        const float k = -(v[0] * n[0] + v[2] * n[2]) / h;  // horizontal speed toward the ramp's top
++        if (h > 0.0f && k > 0.0f && v[1] > 0.0f) {
++            v[0] += n[0] / h * k;
++            v[2] += n[2] / h * k;
++            v[1] = std::sqrt(v[1] * v[1] + k * k);
++            info.start_velocity = v;
++            return true;
++        }
++    }
+     const Vector v = info.start_velocity;
+     Vector normal = scale(n, dot(v, n));
+     normal[1] = 0.0f;
+diff --git a/src/s3/core/air/trajectory/types.hpp b/src/s3/core/air/trajectory/types.hpp
+index 3ae1302..5d24453 100644
+--- a/src/s3/core/air/trajectory/types.hpp
++++ b/src/s3/core/air/trajectory/types.hpp
+@@ -92,6 +92,10 @@ struct SelectorSettings {
+     float vert_jump_align_max_ground_normal_y = 0.0f;     // 94923D136EA2DA37
+     float vert_jump_align_min_direction_y = 0.0f;         // 58BFC8D41216C7EE
+     float vert_jump_align_max_angle = 0.0f;               // 723FF102068622CF
++    /// thpSkate3 addition (0 = off, stock): off a ramp whose normal has less than this up in it, the launch's
++    /// horizontal speed toward the ramp's top is turned into upward speed, as THPS's vert does (its quarter pipes
++    /// top out at 50-55 degrees and carry the skater straight up, not out over the coping).
++    float thps_vert_max_ground_normal_y = 0.0f;
+ };
+ 
+ }  // namespace s3::air::trajectory::types
 diff --git a/src/s3/game/driver.cpp b/src/s3/game/driver.cpp
-index 3220cc7..3455d60 100644
+index 3220cc7..29e015d 100644
 --- a/src/s3/game/driver.cpp
 +++ b/src/s3/game/driver.cpp
 @@ -49,6 +49,7 @@ struct Sim::State {
@@ -10,7 +56,7 @@ index 3220cc7..3455d60 100644
  };
  
  Sim::Sim() : s_(std::make_unique<State>()) {}
-@@ -336,3 +337,21 @@ Presentation Sim::presentation() const {
+@@ -336,3 +337,25 @@ Presentation Sim::presentation() const {
  }
  
  }  // namespace s3::game::driver
@@ -27,13 +73,17 @@ index 3220cc7..3455d60 100644
 +                                s_->base_gravity->z * gravity_scale);
 +}
 +
++void Sim::set_thps_vert(float max_ground_normal_y) {
++    if (s_->skater) s_->skater->trajectory.settings.thps_vert_max_ground_normal_y = max_ground_normal_y;
++}
++
 +trainer::TrainerTuning Sim::tuning() const {
 +    return s_->physics ? s_->physics->trainer : trainer::TrainerTuning{};
 +}
 +
 +}  // namespace s3::game::driver
 diff --git a/src/s3/game/driver.hpp b/src/s3/game/driver.hpp
-index 57f94c7..ac11bf8 100644
+index 57f94c7..4c4d43b 100644
 --- a/src/s3/game/driver.hpp
 +++ b/src/s3/game/driver.hpp
 @@ -18,6 +18,7 @@
@@ -44,13 +94,16 @@ index 57f94c7..ac11bf8 100644
  
  namespace s3::game::input::controllers {
  struct ControllerInput;
-@@ -115,6 +116,9 @@ public:
+@@ -115,6 +116,12 @@ public:
      void set_aspect_ratio(float aspect);
      /// Render/audio view of the last completed tick.
      Presentation presentation() const;
 +    /// thpSkate3 addition: live tuning (skate-mods TrainerTuning) and a world-gravity multiplier.
 +    void set_tuning(const trainer::TrainerTuning& tuning, float gravity_scale);
 +    trainer::TrainerTuning tuning() const;
++    /// thpSkate3 addition: THPS-style vert launches off ramps whose normal has less than `max_ground_normal_y` up in
++    /// it (SelectorSettings::thps_vert_max_ground_normal_y; 0, the default, keeps Skate 3's own launches).
++    void set_thps_vert(float max_ground_normal_y);
  
  private:
      Sim();

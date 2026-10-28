@@ -19,6 +19,12 @@ namespace thpskate {
 // feet to the top of his head, and he is 6'2" (1.88 m); the follow camera's 290-unit boom is then ~2.9 m.
 inline constexpr float kUnitsPerMetre = 100.0f;
 
+// THPS launches its skater straight up off any quarter pipe, and its levels are built for that: most quarter pipes
+// top out at 50-56 degrees, with an invisible wall on the coping. Skate 3 keeps the speed along the ramp, which off
+// a 56-degree top carries the skater out over the coping. Off ramps whose normal has under this much up in it (49
+// degrees and steeper) the launch's speed toward the top is turned upward instead (Sim::set_thps_vert).
+inline constexpr float kThpsVertMaxNormalY = 0.66f;
+
 struct LevelGeometry {
     struct Tri {
         std::array<std::array<float, 3>, 3> v;  // THPS units, PSX axes
