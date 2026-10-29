@@ -1,5 +1,31 @@
 # Handoff: Windows and macOS builds
 
+## Update 2026-10-29: Windows is done (v0.1.2)
+
+- **Released:** v0.1.2 (prerelease), `thpSkate3-0.1.2-windows-x86_64.zip` (17 MB, `tools/make_release_win.sh 0.1.2`).
+  Built on Windows 11 with clang-cl 23 + VS 2022 Build Tools + Ninja; RT64 runs on D3D12.
+- **Checked from a fresh unpack of the zip:** `setup.bat ROM ISO` (Git Bash + uv) built the level caches and
+  core.pack; the exe, started from another directory, booted into Warehouse (`SkWare ... spawned`,
+  `SKATE_GRIND_READY splines=41`), pushed down the start ramp and scored an OLLIE from a scripted pad
+  (`THPS_XPAD`), and quit cleanly. Screenshots in the scripted runs show the level, skater and HUD.
+- **What changed for Windows:**
+  - Root found with `SDL_GetBasePath()` (no `/proc/self/exe`); paths printed with `.string()`.
+  - `thps::trainer::config_dir()`: `%APPDATA%	hpskate3`, `~/Library/Application Support/thpskate3` on macOS,
+    `~/.config/thpskate3` elsewhere.
+  - `import_skate3.sh` / `setup.sh`: venv `Scripts/python.exe` on Windows; `python` when `python3` is missing.
+  - skatecore: clang-cl silently drops `-ffp-contract=off` (it ends up `on`), so MSVC builds pass
+    `/clang:-ffp-contract=off`.
+  - `patches/plume.patch`: D3D12 `copyTextureRegion` no longer reads a null destination texture on texture ->
+    buffer copies (the frame capture crashed the present thread).
+  - `thpskate3.bat`, `setup.bat` (finds Git for Windows' bash), `.gitattributes` (LF for `.sh`/`.patch`), and the
+    zip bundles the MSVC C++ runtime DLLs app-local.
+- **Traps:** the N64Recomp target is `N64RecompCLI`; `recomp_loop.py` needs an absolute N64Recomp path (it runs
+  from `recomp/`); global `core.autocrlf=true` breaks the patches (setup_deps.sh was run with it overridden to
+  false); a scripted run's screenshots need the plume fix.
+- **Not done:** macOS. Linux was not rebuilt for 0.1.2 (the Linux changes are the root lookup and config dir);
+  Linux users stay on 0.1.1 until it is.
+
+
 Written 2026-10-28 on Linux, at commit `9e2a29a` on `main`.
 
 ## Where things stand

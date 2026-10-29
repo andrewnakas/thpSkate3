@@ -305,7 +305,11 @@ if(THPS_WITH_SKATE)
                 "${CMAKE_CURRENT_SOURCE_DIR}/../src/skate/level.cpp")
     set_target_properties(skatecore PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     target_include_directories(skatecore PUBLIC "${THPS_SKATECORE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/../src")
-    target_compile_options(skatecore PRIVATE -O2 -ffp-contract=off -w)
+    if(MSVC)  # clang-cl drops -ffp-contract=off unless it is passed through to the clang driver
+        target_compile_options(skatecore PRIVATE /O2 /clang:-ffp-contract=off -w)
+    else()
+        target_compile_options(skatecore PRIVATE -O2 -ffp-contract=off -w)
+    endif()
 endif()
 
 add_executable(THPS64Recomp ${THPS_SOURCES})

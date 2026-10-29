@@ -40,6 +40,8 @@
 #include <string>
 #include <vector>
 
+#include <SDL.h>
+
 #include "recomp.h"
 
 #include "s3/data/animation_banks.hpp"
@@ -203,9 +205,11 @@ Bridge& bridge() {
             b.units = thpskate::kUnitsPerMetre * thps::trainer::get().skater_size;
         }
         // The executable is <repo>/port/build/THPS64Recomp.
-        std::error_code ec;
-        const auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
-        const auto root = ec ? std::filesystem::current_path() : exe.parent_path().parent_path().parent_path();
+        std::filesystem::path root = std::filesystem::current_path();
+        if (char* base = SDL_GetBasePath()) {
+            root = std::filesystem::u8path(base).parent_path().parent_path().parent_path();
+            SDL_free(base);
+        }
         b.pack_path = std::getenv("THPS_SKATE_PACK") ? std::filesystem::path(std::getenv("THPS_SKATE_PACK"))
                                                      : root / "data" / "cleanpack" / "core.pack";
         b.levels_dir = std::getenv("THPS_SKATE_LEVELS") ? std::filesystem::path(std::getenv("THPS_SKATE_LEVELS"))
@@ -220,7 +224,7 @@ bool load_pack(Bridge& b) {
     std::ifstream f(b.pack_path, std::ios::binary);
     if (!f) {
         std::fprintf(stderr, "[skate] no core.pack at %s: THPS keeps its own skater (set THPS_SKATE_PACK)\n",
-                     b.pack_path.c_str());
+                     b.pack_path.string().c_str());
         return false;
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -230,7 +234,7 @@ bool load_pack(Bridge& b) {
         return false;
     }
     b.vfs = std::make_unique<s3::data::Vfs>(std::move(vfs.value));
-    std::fprintf(stderr, "[skate] core.pack loaded (%s)\n", b.pack_path.c_str());
+    std::fprintf(stderr, "[skate] core.pack loaded (%s)\n", b.pack_path.string().c_str());
     return true;
 }
 
@@ -942,8 +946,7 @@ void record_catch(CatchRecorder& c, const std::string& level, float units, const
     const bool stop = c.speed[3] > 4.0f && sp < 0.5f * c.speed[3] && !landed && c.state[3] != "PhysicsAir" && c.state[3] != "KnownAir";
     if (!bail && !stop) return;
     c.frames_since = 0;
-    const char* home = std::getenv("HOME");
-    const std::filesystem::path dir = home ? std::filesystem::path(home) / ".config" / "thpskate3" : std::filesystem::path(".");
+    const std::filesystem::path dir = thps::trainer::config_dir();
     std::error_code ec;
     std::filesystem::create_directories(dir / "catches", ec);
     const auto& p = r.board.back().position;
@@ -1429,7 +1432,7 @@ const Rig* character_rig(Bridge& b, uint32_t mesh_pack) {
             }
         } else {
             std::fprintf(stderr, "[skate] no THR3 rigs.thr in %s (run tools/thps_skel.py export_rigs)\n",
-                         b.levels_dir.c_str());
+                         b.levels_dir.string().c_str());
         }
     }
     for (const auto& r : rigs) if (r.mesh_pack == mesh_pack) return &r;

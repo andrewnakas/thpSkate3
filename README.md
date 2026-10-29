@@ -42,6 +42,31 @@ tools/setup.sh "Tony Hawk's Pro Skater (U) (V1.1).z64" "Skate 3.iso"   # THPS N6
 It needs a Vulkan GPU and an Xbox 360 controller. The build targets current Linux (built on Ubuntu with glibc 2.43);
 on older systems build it from source.
 
+## Quick start (Windows release)
+
+**Prerelease: early and glitchy.** Download `thpSkate3-<version>-windows-x86_64.zip` from the releases and unpack
+it. Setup needs [Git for Windows](https://git-scm.com/download/win) (its bash runs the setup scripts), Python 3 and
+[uv](https://docs.astral.sh/uv/) (`pip install uv`), plus about 2 GB of free space while the Skate 3 data converts.
+In a Command Prompt in the unpacked folder:
+
+```bat
+setup.bat "Tony Hawk's Pro Skater (U) (V1.1).z64" "Skate 3.iso"
+thpskate3.bat
+```
+
+It needs Windows 10 or 11 with a Direct3D 12 GPU and an Xbox controller. Settings (`trainer.ini`) are kept in
+`%APPDATA%	hpskate3`.
+
+## Setup (Windows, from source)
+
+The Linux steps below work in Git Bash with LLVM clang-cl (Visual Studio 2022 Build Tools with the C++ workload),
+CMake and Ninja, with these differences: use `python` where it says `python3`; the N64Recomp target is
+`N64RecompCLI` (it still makes `N64Recomp.exe`); pass `N64Recomp.exe` to `tools/recomp_loop.py` as an absolute
+path; and configure `port/` from a VS x64 developer prompt with
+`-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl`. RT64 brings SDL2 on Windows, and the build copies
+`SDL2.dll`, `dxcompiler.dll` and `dxil.dll` next to the exe. Clone with `core.autocrlf=false`, or the shell
+scripts and patches get CRLF line endings and fail. `tools/make_release_win.sh VERSION` packages the zip.
+
 ## Setup (Linux, from source)
 
 Needs clang (tested with clang 20), cmake, ninja, Python 3 (with Pillow for the test tools), SDL2 2.32 development

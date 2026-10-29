@@ -2,9 +2,15 @@
 // overlay (src/skate_trainer.cpp). Settings are shared between the menu (render thread) and the bridge (game
 // thread, src/skate_bridge.cpp), which applies them every frame.
 #pragma once
+
+#include <filesystem>
 #include <string>
 
 namespace thps::trainer {
+
+// Where settings (trainer.ini) and the catch log live: %APPDATA%\thpskate3 on Windows,
+// ~/Library/Application Support/thpskate3 on macOS, ~/.config/thpskate3 elsewhere.
+std::filesystem::path config_dir();
 
 struct Settings {
     // skatecore TrainerTuning (skate-mods schema): multipliers on the stock values. The defaults are the tuning

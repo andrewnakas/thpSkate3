@@ -1,0 +1,5 @@
+# Shell scripts and patches must keep LF even with core.autocrlf=true (Git for Windows' default).
+*.sh text eol=lf
+*.patch text eol=lf
+thpskate3 text eol=lf
+*.bat text eol=crlf

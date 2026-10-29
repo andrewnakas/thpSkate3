@@ -20,6 +20,21 @@ void SetOverlay(void (*draw)());
 };
 
 namespace thps::trainer {
+
+std::filesystem::path config_dir() {
+#if defined(_WIN32)
+    if (const char* appdata = std::getenv("APPDATA"); appdata != nullptr && *appdata)
+        return std::filesystem::u8path(appdata) / "thpskate3";
+#endif
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || !*home) return std::filesystem::path(".");
+#if defined(__APPLE__)
+    return std::filesystem::u8path(home) / "Library" / "Application Support" / "thpskate3";
+#else
+    return std::filesystem::u8path(home) / ".config" / "thpskate3";
+#endif
+}
+
 namespace {
 
 std::mutex g_lock;
@@ -31,8 +46,7 @@ bool g_request_save = false;
 std::atomic<int> g_selected_slot{0};
 
 std::filesystem::path settings_path() {
-    const char* home = std::getenv("HOME");
-    std::filesystem::path dir = home ? std::filesystem::path(home) / ".config" / "thpskate3" : std::filesystem::path(".");
+    const std::filesystem::path dir = config_dir();
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir / "trainer.ini";

@@ -9,10 +9,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ISO=$1
 WORK=${2:-$ROOT/work/skate3-import}
 REV=cc41fb9
+# python3 is often only "python" on Windows (and "python3" may be the Store stub there)
+PY=python3; "$PY" -c "" 2>/dev/null || PY=python
 [ -f "$ISO" ] || { echo "usage: $0 SKATE3.iso [WORK_DIR]"; exit 2; }
 mkdir -p "$WORK"
 echo "== copying the converter's input files off the disc"
-python3 "$ROOT/tools/s3_import.py" extract "$ISO" "$WORK/game"
+"$PY" "$ROOT/tools/s3_import.py" extract "$ISO" "$WORK/game"
 echo "== fetching the converter (skate-3-rust-engine @ $REV)"
 if [ ! -d "$WORK/converter/tools" ]; then
     mkdir -p "$WORK/converter"
@@ -20,12 +22,13 @@ if [ ! -d "$WORK/converter/tools" ]; then
         tar -xz -C "$WORK/converter" --strip-components=1 --wildcards '*/tools/*'
 fi
 VENV=${THPS_IMPORT_VENV:-$HOME/.local/share/thpskate3-venv}
-[ -x "$VENV/bin/python" ] || uv venv -q "$VENV"
-uv pip install -q --python "$VENV/bin/python" numpy pillow
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) VPY=$VENV/Scripts/python.exe ;; *) VPY=$VENV/bin/python ;; esac
+[ -x "$VPY" ] || uv venv -q "$VENV"
+uv pip install -q --python "$VPY" numpy pillow
 echo "== converting (animation banks, physics tables, skater model)"
 rm -rf "$WORK/stage"
 mkdir -p "$WORK/stage/assets/private" "$WORK/stage/conversion"
-(cd "$WORK/converter" && "$VENV/bin/python" - "$WORK/game" "$WORK/stage" <<'PY'
+(cd "$WORK/converter" && "$VPY" - "$WORK/game" "$WORK/stage" <<'PY'
 import sys
 from pathlib import Path
 sys.path.insert(0, '.')
@@ -37,6 +40,6 @@ with open(stage / 'setup.log', 'w') as log:
 PY
 )
 mkdir -p "$ROOT/data/cleanpack"
-python3 "$ROOT/tools/s3_import.py" make "$WORK/stage/assets" "$ROOT/data/cleanpack/core.pack"
-python3 "$ROOT/tools/s3_import.py" names "$ISO" "$ROOT/data/cleanpack/trick-names.tsv"
+"$PY" "$ROOT/tools/s3_import.py" make "$WORK/stage/assets" "$ROOT/data/cleanpack/core.pack"
+"$PY" "$ROOT/tools/s3_import.py" names "$ISO" "$ROOT/data/cleanpack/trick-names.tsv"
 echo "== done: data/cleanpack/core.pack (the converter's working files in $WORK can be deleted)"

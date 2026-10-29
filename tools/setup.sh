@@ -9,6 +9,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ROM=$1
 ISO=$2
+PY=python3; "$PY" -c "" 2>/dev/null || PY=python
 [ -f "$ROM" ] && [ -f "$ISO" ] || { echo "usage: $0 THPS.z64 SKATE3.iso"; exit 2; }
 mkdir -p "$ROOT/work"
 cp "$ROM" "$ROOT/work/thps.z64"
@@ -22,13 +23,13 @@ if [ ! -f "$ERZ_DIR/erz.py" ]; then
         -o "$ERZ_DIR/erz.py"
 fi
 export THPS64="$ROOT/work/thps64"
-python3 "$ROOT/tools/thps_pack.py" "$ROOT/work/thps.z64" "$ROOT/work/pack"
+"$PY" "$ROOT/tools/thps_pack.py" "$ROOT/work/thps.z64" "$ROOT/work/pack"
 
 echo "== THPS: level collision, rails and character rigs"
-(cd "$ROOT" && python3 -c "import sys; sys.path.insert(0,'tools'); import thps_level as l; l.export_all('work/pack','work/levels')")
-(cd "$ROOT" && python3 -c "import sys; sys.path.insert(0,'tools'); import thps_skel as s; s.export_rigs('work/pack','work/levels/rigs.thr')")
+(cd "$ROOT" && "$PY" -c "import sys; sys.path.insert(0,'tools'); import thps_level as l; l.export_all('work/pack','work/levels')")
+(cd "$ROOT" && "$PY" -c "import sys; sys.path.insert(0,'tools'); import thps_skel as s; s.export_rigs('work/pack','work/levels/rigs.thr')")
 
 echo "== Skate 3: animation, physics data, skater model and trick names"
 "$ROOT/tools/import_skate3.sh" "$ISO"
 
-echo "== done. Start the game with ./thpskate3 (or port/build/THPS64Recomp work/thps.z64)"
+echo "== done. Start the game with ./thpskate3 (or port/build/THPS64Recomp work/thps.z64; on Windows thpskate3.bat)"

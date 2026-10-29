@@ -1,3 +1,19 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 2cdcf18..b0819b3 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -2312,7 +2312,10 @@ namespace plume {
+ 
+         const D3D12_TEXTURE_COPY_LOCATION copyDstLocation = toD3D12(dstLocation);
+         const D3D12_TEXTURE_COPY_LOCATION copySrcLocation = toD3D12(srcLocation);
+-        setSamplePositions(dstLocation.texture);
++        // thpSkate3: a texture -> buffer readback (frame capture) has no destination texture.
++        if (dstLocation.texture != nullptr) {
++            setSamplePositions(dstLocation.texture);
++        }
+         d3d->CopyTextureRegion(&copyDstLocation, dstX, dstY, dstZ, &copySrcLocation, (srcBox != nullptr) ? &copyBox : nullptr);
+         resetSamplePositions();
+     }
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
 index f1dd503..03b027d 100644
 --- a/plume_vulkan.cpp
